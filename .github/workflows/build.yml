@@ -29,6 +29,26 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon
 
+      - name: Print resolved versions of the suspect native-lib dependencies
+        run: |
+          ./gradlew -q :app:dependencies --configuration debugRuntimeClasspath 2>/dev/null \
+            | grep -iE "datastore-core|datastore-preferences|graphics-path|graphics-shapes" | sort -u || true
+
+      - name: Check native library page-size alignment (16 KB)
+        run: |
+          set -e
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          WORKDIR=$(mktemp -d)
+          if ! unzip -q "$APK" 'lib/*' -d "$WORKDIR"; then
+            echo "No native libraries in the APK."
+            exit 0
+          fi
+          echo "ELF LOAD segments per .so — last column is Align; need >= 0x4000 for 16 KB support:"
+          find "$WORKDIR" -name '*.so' | while read -r so; do
+            echo "--- ${so#"$WORKDIR"/} ---"
+            readelf -lW "$so" | grep LOAD
+          done
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
