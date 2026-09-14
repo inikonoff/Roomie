@@ -26,8 +26,8 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
+      - name: Build debug APKs (app + minimal probe)
+        run: ./gradlew :app:assembleDebug :probe:assembleDebug --no-daemon
 
       - name: Print resolved versions of the suspect native-lib dependencies
         run: |
@@ -54,4 +54,11 @@ jobs:
         with:
           name: roomie-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload probe APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: roomie-probe-debug-apk
+          path: probe/build/outputs/apk/debug/probe-debug.apk
           if-no-files-found: error
