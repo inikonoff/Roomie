@@ -7,11 +7,13 @@ Kotlin + Jetpack Compose, 100% offline, deleted files go to the system trash
 ## Status
 
 This is a from-scratch implementation of the full MVP spec — no prior code existed. All screens,
-the data layer, and the background cleanup worker are written. **It has not been compiled or run**:
-this sandbox's network policy blocks `dl.google.com`, so the Android Gradle Plugin and Android SDK
-platform cannot be downloaded here, and there is no emulator/device attached. Before relying on it,
-build and run it on a real Android Studio setup and walk through the flows in section
-"Suggested manual QA" below — code review alone cannot substitute for that.
+the data layer, and the background cleanup worker are written. **It has not been compiled or run**
+by hand: it was written in a sandbox whose network policy blocks `dl.google.com`, so the Android
+Gradle Plugin and Android SDK platform couldn't be downloaded there, and no emulator/device was
+attached. `.github/workflows/build.yml` builds a debug APK on GitHub's own runners on every push —
+check the Actions tab for the first real compiler feedback. Before relying on the app, also walk
+through the flows in "Suggested manual QA" below on a real device — a green build only proves it
+compiles, not that every gesture feels right.
 
 ## Project layout
 
