@@ -20,6 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -41,6 +42,7 @@ import com.roomie.app.data.media.GalleryFolder
 import com.roomie.app.data.media.SortOrder
 import com.roomie.app.data.settings.RoomieSettings
 import com.roomie.app.data.settings.SwipeCardAction
+import com.roomie.app.data.settings.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,6 +66,9 @@ fun SettingsScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+            SectionTitle("Theme")
+            ThemeModeSelector(settings.themeMode, viewModel::setThemeMode)
+
             SectionTitle("Card order")
             SortOrderSelector(settings.sortOrder, viewModel::setSortOrder)
 
@@ -71,6 +76,7 @@ fun SettingsScreen(
             RetentionSelector(settings.trashRetentionDays, viewModel::setTrashRetentionDays)
 
             SectionTitle("Swipe gestures")
+            GesturePresetRow(onPresetSelected = viewModel::applyGesturePreset)
             SwipeActionRow("Swipe right", settings.swipeRightAction, viewModel::setSwipeRightAction)
             SwipeActionRow("Swipe left", settings.swipeLeftAction, viewModel::setSwipeLeftAction)
             SwipeActionRow("Swipe up", settings.swipeUpAction, viewModel::setSwipeUpAction)
@@ -100,6 +106,29 @@ private fun SectionTitle(text: String) {
         style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
     )
+}
+
+private fun ThemeMode.label(): String = when (this) {
+    ThemeMode.LIGHT -> "Light"
+    ThemeMode.DARK -> "Dark"
+    ThemeMode.SYSTEM -> "System"
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ThemeModeSelector(current: ThemeMode, onSelected: (ThemeMode) -> Unit) {
+    val options = ThemeMode.entries
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        options.forEachIndexed { index, mode ->
+            SegmentedButton(
+                selected = current == mode,
+                onClick = { onSelected(mode) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+            ) {
+                Text(mode.label())
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -142,6 +171,20 @@ private fun SwipeCardAction.label(): String = when (this) {
     SwipeCardAction.MOVE_TO_FOLDER -> "Move to folder"
     SwipeCardAction.POSTPONE -> "Postpone (later this session)"
     SwipeCardAction.NONE -> "Do nothing"
+}
+
+@Composable
+private fun GesturePresetRow(onPresetSelected: (SwipeGesturePreset) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SwipeGesturePreset.entries.forEach { preset ->
+            OutlinedButton(onClick = { onPresetSelected(preset) }) {
+                Text(preset.label)
+            }
+        }
+    }
 }
 
 @Composable

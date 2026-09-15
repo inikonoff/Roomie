@@ -4,10 +4,14 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.roomie.app.data.settings.RoomieSettings
+import com.roomie.app.data.settings.ThemeMode
 import com.roomie.app.ui.CrashScreen
 import com.roomie.app.ui.ViewModelFactory
 import com.roomie.app.ui.navigation.RoomieNavHost
@@ -33,7 +37,13 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             var showDiagnostic by remember { mutableStateOf(diagnosticText != null) }
-            RoomieTheme {
+            val settings by container.settingsRepository.settings.collectAsState(initial = RoomieSettings())
+            val darkTheme = when (settings.themeMode) {
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            }
+            RoomieTheme(darkTheme = darkTheme) {
                 if (showDiagnostic && diagnosticText != null) {
                     CrashScreen(stackTrace = diagnosticText, onContinue = { showDiagnostic = false })
                 } else {

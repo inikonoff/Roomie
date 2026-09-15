@@ -4,7 +4,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -43,16 +44,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.roomie.app.data.media.MediaGroup
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
+import kotlin.math.hypot
 
 private const val SWIPE_THRESHOLD_DP = 120f
+private const val MAX_PEEK_ZOOM = 2.5f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -190,12 +197,13 @@ private fun CardStack(
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         if (behind != null) {
+            // Rendered at the exact same size/opacity it will have once promoted to the top spot
+            // (no scale-down/dim "peek" look) — anything different between the two would show up
+            // as a pop/jump the instant the card above it is swiped away.
             val (w, h) = fitSize(behind.cover.aspectRatio, maxWidth, maxHeight)
             SwipeCard(
                 group = behind,
-                modifier = Modifier
-                    .size(w, h)
-                    .graphicsLayer { scaleX = 0.94f; scaleY = 0.94f; alpha = 0.6f },
+                modifier = Modifier.size(w, h),
             )
         }
 
@@ -231,6 +239,11 @@ private fun CardStack(
 private val SWIPE_SPRING = spring<Offset>(
     dampingRatio = Spring.DampingRatioLowBouncy,
     stiffness = Spring.StiffnessLow,
+)
+
+private val ZOOM_SPRING = spring<Float>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = Spring.StiffnessMedium,
 )
 
 private const val FLING_DISTANCE = 1600f
@@ -277,24 +290,30 @@ private fun DraggableCard(
     onSwiped: (SwipeDirection, Offset) -> Unit,
 ) {
     val offset = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
+    val scale = remember(group.key) { Animatable(1f) }
+    val zoomPan = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     var pastThreshold by remember(group.key) { mutableStateOf(false) }
-    val thresholdPx = with(LocalDensity.current) { SWIPE_THRESHOLD_DP.dp.toPx() }
+    val density = LocalDensity.current
+    val thresholdPx = with(density) { SWIPE_THRESHOLD_DP.dp.toPx() }
+    val cardWidthPx = with(density) { cardWidth.toPx() }
+    val cardHeightPx = with(density) { cardHeight.toPx() }
 
     SwipeCard(
         group = group,
         modifier = Modifier
             .size(cardWidth, cardHeight)
             .graphicsLayer {
-                translationX = offset.value.x
-                translationY = offset.value.y
+                scaleX = scale.value
+                scaleY = scale.value
+                translationX = offset.value.x + zoomPan.value.x
+                translationY = offset.value.y + zoomPan.value.y
                 rotationZ = (offset.value.x / thresholdPx) * 12f
             }
             .pointerInput(group.key) {
-                detectDragGestures(
-                    onDrag = { change, dragAmount ->
-                        change.consume()
+                detectSwipeOrLongPressZoom(
+                    onDrag = { dragAmount ->
                         val newValue = offset.value + dragAmount
                         scope.launch { offset.snapTo(newValue) }
                         val crossed = abs(newValue.x) > thresholdPx || abs(newValue.y) > thresholdPx
@@ -322,7 +341,98 @@ private fun DraggableCard(
                             scope.launch { offset.animateTo(Offset.Zero, SWIPE_SPRING) }
                         }
                     },
+                    onZoomStart = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        scope.launch { scale.animateTo(MAX_PEEK_ZOOM, ZOOM_SPRING) }
+                    },
+                    onZoomPan = { delta ->
+                        val maxPanX = cardWidthPx * (scale.value - 1f) / 2f
+                        val maxPanY = cardHeightPx * (scale.value - 1f) / 2f
+                        val newPan = zoomPan.value + delta
+                        scope.launch {
+                            zoomPan.snapTo(
+                                Offset(
+                                    newPan.x.coerceIn(-maxPanX, maxPanX),
+                                    newPan.y.coerceIn(-maxPanY, maxPanY),
+                                ),
+                            )
+                        }
+                    },
+                    onZoomEnd = {
+                        // A quick peek, not a decision: as soon as the finger lifts, the photo
+                        // snaps straight back to its normal size and position.
+                        scope.launch { scale.animateTo(1f, ZOOM_SPRING) }
+                        scope.launch { zoomPan.animateTo(Offset.Zero, ZOOM_SPRING) }
+                    },
                 )
             },
     )
+}
+
+/**
+ * Routes a touch gesture to either the swipe-to-decide drag or a one-finger long-press zoom, for
+ * the whole duration of a single continuous gesture: whichever resolves first — the finger moving
+ * past touch slop (swipe) or holding still past the long-press timeout (zoom) — wins, and the
+ * gesture stays in that mode until the finger lifts. This is why a deliberate hold-and-drag to
+ * look around a zoomed photo can never suddenly turn into a swipe.
+ */
+private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
+    onDrag: (Offset) -> Unit,
+    onDragEnd: () -> Unit,
+    onZoomStart: () -> Unit,
+    onZoomPan: (Offset) -> Unit,
+    onZoomEnd: () -> Unit,
+) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false)
+        var totalDrag = Offset.Zero
+        var isZoom = false
+        var isSwipe = false
+
+        while (!isZoom && !isSwipe) {
+            val event = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { awaitPointerEvent() }
+            if (event == null) {
+                isZoom = true
+                break
+            }
+            val change = event.changes.firstOrNull { it.positionChanged() }
+            if (change != null) {
+                totalDrag += change.positionChange()
+                change.consume()
+                if (hypot(totalDrag.x, totalDrag.y) > viewConfiguration.touchSlop) {
+                    isSwipe = true
+                }
+            }
+            if (event.changes.none { it.pressed }) {
+                // Released before either resolved (a plain tap): nothing to do.
+                return@awaitEachGesture
+            }
+        }
+
+        if (isZoom) {
+            onZoomStart()
+            while (true) {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull { it.positionChanged() }
+                if (change != null) {
+                    onZoomPan(change.positionChange())
+                    change.consume()
+                }
+                if (event.changes.none { it.pressed }) break
+            }
+            onZoomEnd()
+        } else {
+            onDrag(totalDrag)
+            while (true) {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull { it.positionChanged() }
+                if (change != null) {
+                    onDrag(change.positionChange())
+                    change.consume()
+                }
+                if (event.changes.none { it.pressed }) break
+            }
+            onDragEnd()
+        }
+    }
 }

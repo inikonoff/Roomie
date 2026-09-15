@@ -1,5 +1,6 @@
 package com.roomie.app.ui.navigation
 
+import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -7,7 +8,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.roomie.app.ui.screens.swipe.MoveConfirmationRequest
+import com.roomie.app.ui.screens.swipe.TrashConfirmationRequest
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -55,28 +61,47 @@ fun RoomieNavHost(viewModelFactory: ViewModelFactory) {
     // Lives here, not inside the swipe destination: "Delete all" is pressed from the trash-preview
     // screen, by which point the swipe screen has already left composition, so its own collector
     // would never see the event. This host composable stays alive for the whole app session.
+    //
+    // launch() only starts the system confirmation activity — it returns immediately, well before
+    // the user has even seen the dialog. The actual trash/write grant is only real once the result
+    // callback below fires with RESULT_OK, so the pending request is stashed here and acted on
+    // there, never right after launch() (that used to fire unconditionally, before the user had
+    // answered anything, which is why nothing was actually getting trashed/moved).
+    var pendingTrashRequest by remember { mutableStateOf<TrashConfirmationRequest?>(null) }
     val intentSenderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult(),
-    ) { /* Confirmation is driven by re-invoking onSystemTrashConfirmed below regardless of result,
-          matching the OS's own "one dialog, then proceed" trash UX. */ }
-
-    LaunchedEffect(swipeSessionViewModel) {
-        swipeSessionViewModel.trashConfirmationEvents.collect { request ->
-            intentSenderLauncher.launch(IntentSenderRequest.Builder(request.intentSender).build())
+    ) { result ->
+        val request = pendingTrashRequest
+        pendingTrashRequest = null
+        if (request != null && result.resultCode == Activity.RESULT_OK) {
             swipeSessionViewModel.onSystemTrashConfirmed(request.groups)
         }
     }
 
-    // Same "one dialog, then proceed regardless of result" pattern as trashing, for the write
-    // access needed to move a swiped-up card into the configured target folder.
+    LaunchedEffect(swipeSessionViewModel) {
+        swipeSessionViewModel.trashConfirmationEvents.collect { request ->
+            pendingTrashRequest = request
+            intentSenderLauncher.launch(IntentSenderRequest.Builder(request.intentSender).build())
+        }
+    }
+
+    // Same pattern as trashing, for the write access needed to move a swiped card into the
+    // configured target folder.
+    var pendingMoveRequest by remember { mutableStateOf<MoveConfirmationRequest?>(null) }
     val moveIntentSenderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult(),
-    ) { }
+    ) { result ->
+        val request = pendingMoveRequest
+        pendingMoveRequest = null
+        if (request != null && result.resultCode == Activity.RESULT_OK) {
+            swipeSessionViewModel.onMoveConfirmed(request)
+        }
+    }
 
     LaunchedEffect(swipeSessionViewModel) {
         swipeSessionViewModel.moveConfirmationEvents.collect { request ->
+            pendingMoveRequest = request
             moveIntentSenderLauncher.launch(IntentSenderRequest.Builder(request.intentSender).build())
-            swipeSessionViewModel.onMoveConfirmed(request)
         }
     }
 

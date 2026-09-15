@@ -17,6 +17,7 @@ data class RoomieSettings(
     /** Destination for [SwipeCardAction.MOVE_TO_FOLDER]; null until the user picks one in Settings. */
     val moveToFolderBucketId: Long? = null,
     val moveToFolderName: String? = null,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
 ) {
     val hasReachedSwipeLimit: Boolean
         get() = monetizationEnabled && !isPremiumUnlocked && sessionSwipeCount >= freeSwipeLimit

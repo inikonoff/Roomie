@@ -33,6 +33,7 @@ class SettingsRepository(private val context: Context) {
         val SWIPE_DOWN_ACTION = stringPreferencesKey("swipe_down_action")
         val MOVE_TO_FOLDER_BUCKET_ID = longPreferencesKey("move_to_folder_bucket_id")
         val MOVE_TO_FOLDER_NAME = stringPreferencesKey("move_to_folder_name")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
     }
 
     val settings: Flow<RoomieSettings> = context.dataStore.data.map { prefs ->
@@ -55,6 +56,7 @@ class SettingsRepository(private val context: Context) {
                 ?: defaults.swipeDownAction,
             moveToFolderBucketId = prefs[Keys.MOVE_TO_FOLDER_BUCKET_ID],
             moveToFolderName = prefs[Keys.MOVE_TO_FOLDER_NAME],
+            themeMode = prefs[Keys.THEME_MODE]?.let { ThemeMode.valueOf(it) } ?: defaults.themeMode,
         )
     }
 
@@ -107,10 +109,29 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.SWIPE_DOWN_ACTION] = action.name }
     }
 
+    /** Sets all four directions in one write, for a gesture-scheme preset in Settings. */
+    suspend fun setSwipeActions(
+        left: SwipeCardAction,
+        right: SwipeCardAction,
+        up: SwipeCardAction,
+        down: SwipeCardAction,
+    ) {
+        context.dataStore.edit {
+            it[Keys.SWIPE_LEFT_ACTION] = left.name
+            it[Keys.SWIPE_RIGHT_ACTION] = right.name
+            it[Keys.SWIPE_UP_ACTION] = up.name
+            it[Keys.SWIPE_DOWN_ACTION] = down.name
+        }
+    }
+
     suspend fun setMoveToFolder(bucketId: Long, name: String) {
         context.dataStore.edit {
             it[Keys.MOVE_TO_FOLDER_BUCKET_ID] = bucketId
             it[Keys.MOVE_TO_FOLDER_NAME] = name
         }
+    }
+
+    suspend fun setThemeMode(mode: ThemeMode) {
+        context.dataStore.edit { it[Keys.THEME_MODE] = mode.name }
     }
 }
