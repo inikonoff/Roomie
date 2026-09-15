@@ -35,8 +35,9 @@ class RoomieApplication : Application(), SingletonImageLoader.Factory {
         CrashReporter.mark(this, "onCreate:done")
     }
 
-    /** Registers the video-frame decoder so burst/video covers get a real thumbnail instead of a
-     *  blank tile, and enables downsampling-friendly defaults to avoid OOM on large photos. */
+    /** Registers the video-frame decoder as a fallback for video covers on API < 29 (see
+     *  [com.roomie.app.ui.components.MediaThumbnail]), and enables downsampling-friendly defaults
+     *  to avoid OOM on large photos. */
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
             .components { add(VideoFrameDecoder.Factory()) }

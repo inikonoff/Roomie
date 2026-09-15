@@ -35,6 +35,7 @@ class SettingsRepository(private val context: Context) {
         val MOVE_TO_FOLDER_NAME = stringPreferencesKey("move_to_folder_name")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val CARD_ANIMATION_STYLE = stringPreferencesKey("card_animation_style")
+        val LANGUAGE_MODE = stringPreferencesKey("language_mode")
     }
 
     val settings: Flow<RoomieSettings> = context.dataStore.data.map { prefs ->
@@ -60,6 +61,7 @@ class SettingsRepository(private val context: Context) {
             themeMode = prefs[Keys.THEME_MODE]?.let { ThemeMode.valueOf(it) } ?: defaults.themeMode,
             cardAnimationStyle = prefs[Keys.CARD_ANIMATION_STYLE]?.let { CardAnimationStyle.valueOf(it) }
                 ?: defaults.cardAnimationStyle,
+            languageMode = prefs[Keys.LANGUAGE_MODE]?.let { LanguageMode.valueOf(it) } ?: defaults.languageMode,
         )
     }
 
@@ -140,5 +142,9 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setCardAnimationStyle(style: CardAnimationStyle) {
         context.dataStore.edit { it[Keys.CARD_ANIMATION_STYLE] = style.name }
+    }
+
+    suspend fun setLanguageMode(mode: LanguageMode) {
+        context.dataStore.edit { it[Keys.LANGUAGE_MODE] = mode.name }
     }
 }

@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.roomie.app.ui.screens.swipe.SummaryUiState
+import com.roomie.app.ui.strings.LocalAppStrings
 import java.util.Locale
 import kotlin.math.ln
 import kotlin.math.pow
@@ -24,6 +25,7 @@ fun SummaryScreen(
     summary: SummaryUiState,
     onDone: () -> Unit,
 ) {
+    val strings = LocalAppStrings.current
     Column(
         modifier = Modifier.fillMaxSize().padding(32.dp),
         verticalArrangement = Arrangement.Center,
@@ -35,19 +37,19 @@ fun SummaryScreen(
             tint = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.padding(bottom = 16.dp),
         )
-        Text("All cleaned up!", style = MaterialTheme.typography.headlineSmall)
+        Text(strings.allCleanedUp, style = MaterialTheme.typography.headlineSmall)
         Text(
-            "${summary.itemCount} item${if (summary.itemCount == 1) "" else "s"} removed",
+            strings.itemsRemoved(summary.itemCount),
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(top = 8.dp),
         )
         Text(
-            "${formatBytes(summary.freedBytes)} freed",
+            strings.bytesFreed(formatBytes(summary.freedBytes)),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.primary,
         )
         Button(onClick = onDone, modifier = Modifier.padding(top = 32.dp)) {
-            Text("Done")
+            Text(strings.done)
         }
     }
 }

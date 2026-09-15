@@ -56,6 +56,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.data.settings.CardAnimationStyle
+import com.roomie.app.ui.strings.AppStrings
+import com.roomie.app.ui.strings.LocalAppStrings
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
@@ -75,6 +77,7 @@ fun SwipeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val pendingTrash by viewModel.pendingTrash.collectAsState()
+    val strings = LocalAppStrings.current
 
     LaunchedEffect(uiState.hasReachedLimit) {
         if (uiState.hasReachedLimit) onLimitReached()
@@ -90,14 +93,14 @@ fun SwipeScreen(
                 title = { Text(uiState.folderName) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Filled.ArrowBack, contentDescription = strings.back)
                     }
                 },
                 actions = {
                     if (pendingTrash.isNotEmpty()) {
                         IconButton(onClick = onOpenTrashPreview) {
                             BadgedBox(badge = { Badge { Text(pendingTrash.size.toString()) } }) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Review trash")
+                                Icon(Icons.Filled.Delete, contentDescription = strings.reviewTrash)
                             }
                         }
                     }
@@ -115,7 +118,7 @@ fun SwipeScreen(
                 when {
                     uiState.isLoading -> CircularProgressIndicator()
                     uiState.stack.isEmpty() -> Text(
-                        "Nothing left here — this folder is clean.",
+                        strings.folderIsClean,
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     else -> CardStack(
@@ -126,7 +129,7 @@ fun SwipeScreen(
                 }
             }
 
-            BottomActionBar(canUndo = uiState.canUndo, onUndo = viewModel::undo)
+            BottomActionBar(strings = strings, canUndo = uiState.canUndo, onUndo = viewModel::undo)
         }
     }
 }
@@ -141,7 +144,7 @@ private fun SwipeProgressBar(current: Int, limit: Int) {
 }
 
 @Composable
-private fun BottomActionBar(canUndo: Boolean, onUndo: () -> Unit) {
+private fun BottomActionBar(strings: AppStrings, canUndo: Boolean, onUndo: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
         horizontalArrangement = Arrangement.Center,
@@ -161,7 +164,7 @@ private fun BottomActionBar(canUndo: Boolean, onUndo: () -> Unit) {
             },
             text = {
                 Text(
-                    "Undo",
+                    strings.undo,
                     color = if (canUndo) {
                         MaterialTheme.colorScheme.onPrimaryContainer
                     } else {

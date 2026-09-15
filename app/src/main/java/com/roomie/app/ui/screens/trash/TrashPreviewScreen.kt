@@ -32,11 +32,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import com.roomie.app.data.media.MediaGroup
+import com.roomie.app.ui.components.MediaThumbnail
 import com.roomie.app.ui.screens.swipe.SwipeSessionViewModel
+import com.roomie.app.ui.strings.AppStrings
+import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.ContainerShape
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,14 +48,15 @@ fun TrashPreviewScreen(
     onDeleteConfirmed: () -> Unit,
 ) {
     val pendingTrash by viewModel.pendingTrash.collectAsState()
+    val strings = LocalAppStrings.current
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Review trash (${pendingTrash.size})") },
+                title = { Text(strings.reviewTrashTitle(pendingTrash.size)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Filled.ArrowBack, contentDescription = strings.back)
                     }
                 },
             )
@@ -69,7 +71,7 @@ fun TrashPreviewScreen(
                     enabled = pendingTrash.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Delete all (${pendingTrash.size})")
+                    Text(strings.deleteAll(pendingTrash.size))
                 }
             }
         },
@@ -79,7 +81,7 @@ fun TrashPreviewScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Nothing marked for deletion.", style = MaterialTheme.typography.bodyLarge)
+                Text(strings.nothingMarkedForDeletion, style = MaterialTheme.typography.bodyLarge)
             }
         } else {
             LazyVerticalGrid(
@@ -91,6 +93,7 @@ fun TrashPreviewScreen(
             ) {
                 items(pendingTrash, key = { it.key }) { group ->
                     TrashGridTile(
+                        strings = strings,
                         group = group,
                         onKeep = { viewModel.restoreFromPendingTrash(group) },
                     )
@@ -101,7 +104,7 @@ fun TrashPreviewScreen(
 }
 
 @Composable
-private fun TrashGridTile(group: MediaGroup, onKeep: () -> Unit) {
+private fun TrashGridTile(strings: AppStrings, group: MediaGroup, onKeep: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -109,10 +112,10 @@ private fun TrashGridTile(group: MediaGroup, onKeep: () -> Unit) {
             .clip(ContainerShape)
             .background(MaterialTheme.colorScheme.surface),
     ) {
-        AsyncImage(
-            model = group.cover.uri,
+        MediaThumbnail(
+            uri = group.cover.uri,
+            isVideo = group.cover.isVideo,
             contentDescription = group.cover.displayName,
-            contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )
         IconButton(
@@ -124,7 +127,7 @@ private fun TrashGridTile(group: MediaGroup, onKeep: () -> Unit) {
                 .clip(CircleShape)
                 .background(Color.Black.copy(alpha = 0.55f)),
         ) {
-            Icon(Icons.Filled.Close, contentDescription = "Keep this item", tint = Color.White)
+            Icon(Icons.Filled.Close, contentDescription = strings.keepThisItem, tint = Color.White)
         }
     }
 }

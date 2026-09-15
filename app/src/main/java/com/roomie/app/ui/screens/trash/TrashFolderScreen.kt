@@ -32,10 +32,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import com.roomie.app.data.db.TrashEntry
+import com.roomie.app.ui.components.MediaThumbnail
+import com.roomie.app.ui.strings.AppStrings
+import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.ContainerShape
 import java.util.concurrent.TimeUnit
 
@@ -50,14 +51,15 @@ fun TrashFolderScreen(
     onBack: () -> Unit,
 ) {
     val entries by viewModel.entries.collectAsState()
+    val strings = LocalAppStrings.current
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Trash (${entries.size})") },
+                title = { Text(strings.trashTitle(entries.size)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Filled.ArrowBack, contentDescription = strings.back)
                     }
                 },
             )
@@ -65,7 +67,7 @@ fun TrashFolderScreen(
     ) { padding ->
         if (entries.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("Trash is empty.", style = MaterialTheme.typography.bodyLarge)
+                Text(strings.trashIsEmpty, style = MaterialTheme.typography.bodyLarge)
             }
         } else {
             LazyVerticalGrid(
@@ -76,7 +78,7 @@ fun TrashFolderScreen(
                 modifier = Modifier.padding(padding),
             ) {
                 items(entries, key = { it.stableId }) { entry ->
-                    TrashEntryTile(entry = entry, onRestore = { viewModel.restore(entry) })
+                    TrashEntryTile(strings = strings, entry = entry, onRestore = { viewModel.restore(entry) })
                 }
             }
         }
@@ -84,7 +86,7 @@ fun TrashFolderScreen(
 }
 
 @Composable
-private fun TrashEntryTile(entry: TrashEntry, onRestore: () -> Unit) {
+private fun TrashEntryTile(strings: AppStrings, entry: TrashEntry, onRestore: () -> Unit) {
     Column {
         Box(
             modifier = Modifier
@@ -93,10 +95,10 @@ private fun TrashEntryTile(entry: TrashEntry, onRestore: () -> Unit) {
                 .clip(ContainerShape)
                 .background(MaterialTheme.colorScheme.surface),
         ) {
-            AsyncImage(
-                model = Uri.parse(entry.uri),
+            MediaThumbnail(
+                uri = Uri.parse(entry.uri),
+                isVideo = entry.stableId.startsWith("v"),
                 contentDescription = entry.displayName,
-                contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
             IconButton(
@@ -108,7 +110,7 @@ private fun TrashEntryTile(entry: TrashEntry, onRestore: () -> Unit) {
                     .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.55f)),
             ) {
-                Icon(Icons.Filled.Restore, contentDescription = "Restore", tint = Color.White)
+                Icon(Icons.Filled.Restore, contentDescription = strings.restore, tint = Color.White)
             }
             Box(
                 modifier = Modifier
@@ -119,7 +121,7 @@ private fun TrashEntryTile(entry: TrashEntry, onRestore: () -> Unit) {
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             ) {
                 Text(
-                    formatTimeLeft(entry.permanentDeleteAtMillis),
+                    formatTimeLeft(strings, entry.permanentDeleteAtMillis),
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall,
                 )
@@ -128,12 +130,12 @@ private fun TrashEntryTile(entry: TrashEntry, onRestore: () -> Unit) {
     }
 }
 
-private fun formatTimeLeft(permanentDeleteAtMillis: Long): String {
+private fun formatTimeLeft(strings: AppStrings, permanentDeleteAtMillis: Long): String {
     val remainingMillis = (permanentDeleteAtMillis - System.currentTimeMillis()).coerceAtLeast(0)
     val days = TimeUnit.MILLISECONDS.toDays(remainingMillis)
-    if (days >= 1) return "${days}d left"
+    if (days >= 1) return strings.timeLeftDays(days)
     val hours = TimeUnit.MILLISECONDS.toHours(remainingMillis)
-    if (hours >= 1) return "${hours}h left"
+    if (hours >= 1) return strings.timeLeftHours(hours)
     val minutes = TimeUnit.MILLISECONDS.toMinutes(remainingMillis)
-    return "${minutes}m left"
+    return strings.timeLeftMinutes(minutes)
 }

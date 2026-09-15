@@ -19,6 +19,7 @@ data class RoomieSettings(
     val moveToFolderName: String? = null,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val cardAnimationStyle: CardAnimationStyle = CardAnimationStyle.CLASSIC,
+    val languageMode: LanguageMode = LanguageMode.SYSTEM,
 ) {
     val hasReachedSwipeLimit: Boolean
         get() = monetizationEnabled && !isPremiumUnlocked && sessionSwipeCount >= freeSwipeLimit

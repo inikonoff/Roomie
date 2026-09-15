@@ -41,7 +41,7 @@ class MediaRepository(private val context: Context) {
 
     /**
      * Returns swipeable units for [bucketId] (null = "All photos"), newest-or-oldest first per
-     * [sortOrder], with burst photo sequences collapsed via [groupIntoUnits].
+     * [sortOrder] — one [MediaGroup] per photo or video.
      */
     suspend fun getMediaGroups(
         bucketId: Long?,
@@ -49,7 +49,7 @@ class MediaRepository(private val context: Context) {
         sortOrder: SortOrder,
     ): List<MediaGroup> = withContext(Dispatchers.IO) {
         val items = (queryImages(bucketId, period) + queryVideos(bucketId, period))
-            .sortedBy { it.dateTakenMillis } // ascending: required by groupIntoUnits
+            .sortedBy { it.dateTakenMillis }
         val groups = items.groupIntoUnits()
         if (sortOrder == SortOrder.NEWEST_FIRST) groups.asReversed() else groups
     }

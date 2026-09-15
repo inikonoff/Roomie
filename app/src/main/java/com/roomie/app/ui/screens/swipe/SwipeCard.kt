@@ -25,6 +25,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.size.Size
 import com.roomie.app.data.media.MediaGroup
+import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.CardShape
 import java.util.concurrent.TimeUnit
 
@@ -33,6 +34,7 @@ fun SwipeCard(
     group: MediaGroup,
     modifier: Modifier = Modifier,
 ) {
+    val strings = LocalAppStrings.current
     Box(
         modifier = modifier
             .clip(CardShape)
@@ -54,10 +56,6 @@ fun SwipeCard(
             modifier = Modifier.fillMaxSize(),
         )
 
-        if (group.isBurst) {
-            CardBadge(text = "1/${group.items.size}", modifier = Modifier.align(Alignment.TopEnd))
-        }
-
         if (group.cover.isVideo) {
             Box(
                 modifier = Modifier
@@ -67,7 +65,7 @@ fun SwipeCard(
                     .background(Color.Black.copy(alpha = 0.45f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = "Video", tint = Color.White)
+                Icon(Icons.Filled.PlayArrow, contentDescription = strings.videoContentDescription, tint = Color.White)
             }
             CardBadge(
                 text = formatDuration(group.cover.durationMillis),

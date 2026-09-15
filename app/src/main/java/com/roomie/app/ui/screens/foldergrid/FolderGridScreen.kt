@@ -31,12 +31,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.data.media.PeriodFilter
-import com.roomie.app.ui.theme.ContainerShape
+import com.roomie.app.ui.components.MediaThumbnail
+import com.roomie.app.ui.strings.AppStrings
+import com.roomie.app.ui.strings.LocalAppStrings
 
 /**
  * The full contents of a folder, seen before committing to a swipe session — tapping a photo
@@ -53,6 +53,7 @@ fun FolderGridScreen(
     onBack: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val strings = LocalAppStrings.current
 
     LaunchedEffect(bucketId, period) {
         viewModel.load(bucketId, period)
@@ -64,7 +65,7 @@ fun FolderGridScreen(
                 title = { Text(displayName) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Filled.ArrowBack, contentDescription = strings.back)
                     }
                 },
             )
@@ -82,7 +83,7 @@ fun FolderGridScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Nothing here.", style = MaterialTheme.typography.bodyLarge)
+                Text(strings.nothingHere, style = MaterialTheme.typography.bodyLarge)
             }
 
             else -> LazyVerticalGrid(
@@ -93,7 +94,7 @@ fun FolderGridScreen(
                 modifier = Modifier.padding(padding),
             ) {
                 items(uiState.groups, key = { it.key }) { group ->
-                    GridThumbnail(group = group, onClick = { onOpenSwipe(group.cover.stableId) })
+                    GridThumbnail(strings = strings, group = group, onClick = { onOpenSwipe(group.cover.stableId) })
                 }
             }
         }
@@ -101,7 +102,7 @@ fun FolderGridScreen(
 }
 
 @Composable
-private fun GridThumbnail(group: MediaGroup, onClick: () -> Unit) {
+private fun GridThumbnail(strings: AppStrings, group: MediaGroup, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -110,29 +111,18 @@ private fun GridThumbnail(group: MediaGroup, onClick: () -> Unit) {
             .background(MaterialTheme.colorScheme.surface)
             .clickable(onClick = onClick),
     ) {
-        AsyncImage(
-            model = group.cover.uri,
+        MediaThumbnail(
+            uri = group.cover.uri,
+            isVideo = group.cover.isVideo,
             contentDescription = group.cover.displayName,
-            contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )
         if (group.cover.isVideo) {
             Icon(
                 Icons.Filled.PlayArrow,
-                contentDescription = "Video",
+                contentDescription = strings.videoContentDescription,
                 tint = Color.White,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp),
-            )
-        } else if (group.isBurst) {
-            Text(
-                "${group.items.size}",
-                color = Color.White,
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .clip(ContainerShape)
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
             )
         }
     }

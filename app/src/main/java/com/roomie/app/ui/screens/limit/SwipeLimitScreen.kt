@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.roomie.app.ui.screens.swipe.SwipeSessionViewModel
+import com.roomie.app.ui.strings.LocalAppStrings
 import kotlinx.coroutines.launch
 
 /**
@@ -39,6 +40,7 @@ fun SwipeLimitScreen(
 ) {
     val scope = rememberCoroutineScope()
     var message by remember { mutableStateOf<String?>(null) }
+    val strings = LocalAppStrings.current
 
     Column(
         modifier = Modifier.fillMaxSize().padding(32.dp),
@@ -51,9 +53,9 @@ fun SwipeLimitScreen(
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(bottom = 16.dp),
         )
-        Text("Free swipe limit reached", style = MaterialTheme.typography.headlineSmall)
+        Text(strings.freeSwipeLimitReached, style = MaterialTheme.typography.headlineSmall)
         Text(
-            "Watch a short ad to keep going, or unlock unlimited swiping for good.",
+            strings.swipeLimitExplanation,
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
         )
@@ -62,24 +64,24 @@ fun SwipeLimitScreen(
             onClick = {
                 scope.launch {
                     val granted = viewModel.unlockViaRewardedAd()
-                    if (granted) onUnlocked() else message = "No ad available right now."
+                    if (granted) onUnlocked() else message = strings.noAdAvailable
                 }
             },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Watch ad to continue")
+            Text(strings.watchAdToContinue)
         }
 
         OutlinedButton(
             onClick = {
                 scope.launch {
                     val purchased = viewModel.unlockViaPurchase()
-                    if (purchased) onUnlocked() else message = "Purchases aren't set up yet."
+                    if (purchased) onUnlocked() else message = strings.purchasesNotSetUp
                 }
             },
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         ) {
-            Text("Unlock forever")
+            Text(strings.unlockForever)
         }
 
         message?.let {
@@ -95,7 +97,7 @@ fun SwipeLimitScreen(
             onClick = onBackToFolders,
             modifier = Modifier.padding(top = 8.dp),
         ) {
-            Text("Back to folders")
+            Text(strings.backToFolders)
         }
     }
 }

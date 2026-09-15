@@ -50,6 +50,8 @@ import android.net.Uri
 import coil3.compose.AsyncImage
 import com.roomie.app.data.media.GalleryFolder
 import com.roomie.app.data.media.PeriodFilter
+import com.roomie.app.ui.strings.AppStrings
+import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.ContainerShape
 
 @Composable
@@ -62,6 +64,7 @@ fun FolderListScreen(
     val uiState by viewModel.uiState.collectAsState()
     val trashCount by viewModel.trashCount.collectAsState()
     val context = LocalContext.current
+    val strings = LocalAppStrings.current
 
     val requiredPermissions = remember {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -91,11 +94,12 @@ fun FolderListScreen(
 
     Scaffold(
         topBar = {
-            RoomieTopBar(onOpenSettings = onOpenSettings)
+            RoomieTopBar(strings = strings, onOpenSettings = onOpenSettings)
         },
     ) { padding ->
         when {
             !uiState.hasMediaPermission -> PermissionRationale(
+                strings = strings,
                 modifier = Modifier.padding(padding),
                 onGrantClick = { permissionLauncher.launch(requiredPermissions) },
             )
@@ -105,6 +109,7 @@ fun FolderListScreen(
             }
 
             else -> FolderGrid(
+                strings = strings,
                 modifier = Modifier.padding(padding),
                 folders = uiState.folders,
                 period = uiState.period,
@@ -119,19 +124,19 @@ fun FolderListScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RoomieTopBar(onOpenSettings: () -> Unit) {
+private fun RoomieTopBar(strings: AppStrings, onOpenSettings: () -> Unit) {
     TopAppBar(
-        title = { Text("Roomie") },
+        title = { Text(strings.appName) },
         actions = {
             IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                Icon(Icons.Filled.Settings, contentDescription = strings.settingsContentDescription)
             }
         },
     )
 }
 
 @Composable
-private fun PermissionRationale(modifier: Modifier = Modifier, onGrantClick: () -> Unit) {
+private fun PermissionRationale(strings: AppStrings, modifier: Modifier = Modifier, onGrantClick: () -> Unit) {
     Column(
         modifier = modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
@@ -139,18 +144,19 @@ private fun PermissionRationale(modifier: Modifier = Modifier, onGrantClick: () 
     ) {
         Icon(Icons.Filled.Photo, contentDescription = null, modifier = Modifier.padding(bottom = 16.dp))
         Text(
-            "Roomie needs access to your photos and videos to help you clean up your gallery.",
+            strings.permissionRationale,
             style = MaterialTheme.typography.bodyLarge,
         )
         Spacer(modifier = Modifier.padding(top = 16.dp))
         Button(onClick = onGrantClick) {
-            Text("Grant access")
+            Text(strings.grantAccess)
         }
     }
 }
 
 @Composable
 private fun FolderGrid(
+    strings: AppStrings,
     modifier: Modifier = Modifier,
     folders: List<GalleryFolder>,
     period: PeriodFilter,
@@ -160,7 +166,7 @@ private fun FolderGrid(
     onOpenTrash: () -> Unit,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        PeriodFilterRow(selected = period, onSelected = onPeriodSelected)
+        PeriodFilterRow(strings = strings, selected = period, onSelected = onPeriodSelected)
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
@@ -170,16 +176,18 @@ private fun FolderGrid(
         ) {
             item {
                 AllPhotosCard(
+                    strings = strings,
                     totalCount = folders.sumOf { it.itemCount },
-                    onClick = { onOpenFolder(null, "All photos", period) },
+                    onClick = { onOpenFolder(null, strings.allPhotos, period) },
                 )
             }
             item {
-                TrashCard(itemCount = trashCount, onClick = onOpenTrash)
+                TrashCard(strings = strings, itemCount = trashCount, onClick = onOpenTrash)
             }
             gridItems(folders, key = { it.bucketId }) { folder ->
                 FolderCard(
                     folder = folder,
+                    strings = strings,
                     onClick = { onOpenFolder(folder.bucketId, folder.displayName, period) },
                 )
             }
@@ -188,12 +196,12 @@ private fun FolderGrid(
 }
 
 @Composable
-private fun PeriodFilterRow(selected: PeriodFilter, onSelected: (PeriodFilter) -> Unit) {
+private fun PeriodFilterRow(strings: AppStrings, selected: PeriodFilter, onSelected: (PeriodFilter) -> Unit) {
     val options = listOf(
-        PeriodFilter.ALL to "All time",
-        PeriodFilter.LAST_DAY to "Day",
-        PeriodFilter.LAST_MONTH to "Month",
-        PeriodFilter.LAST_YEAR to "Year",
+        PeriodFilter.ALL to strings.periodAll,
+        PeriodFilter.LAST_DAY to strings.periodDay,
+        PeriodFilter.LAST_MONTH to strings.periodMonth,
+        PeriodFilter.LAST_YEAR to strings.periodYear,
     )
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -210,10 +218,10 @@ private fun PeriodFilterRow(selected: PeriodFilter, onSelected: (PeriodFilter) -
 }
 
 @Composable
-private fun AllPhotosCard(totalCount: Int, onClick: () -> Unit) {
+private fun AllPhotosCard(strings: AppStrings, totalCount: Int, onClick: () -> Unit) {
     FolderTile(
-        title = "All photos",
-        subtitle = "$totalCount items",
+        title = strings.allPhotos,
+        subtitle = strings.itemsCount(totalCount),
         coverUri = null,
         icon = Icons.Filled.Photo,
         onClick = onClick,
@@ -221,10 +229,10 @@ private fun AllPhotosCard(totalCount: Int, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TrashCard(itemCount: Int, onClick: () -> Unit) {
+private fun TrashCard(strings: AppStrings, itemCount: Int, onClick: () -> Unit) {
     FolderTile(
-        title = "Trash",
-        subtitle = if (itemCount == 0) "Empty" else "$itemCount items",
+        title = strings.trash,
+        subtitle = if (itemCount == 0) strings.empty else strings.itemsCount(itemCount),
         coverUri = null,
         icon = Icons.Filled.Delete,
         onClick = onClick,
@@ -232,10 +240,10 @@ private fun TrashCard(itemCount: Int, onClick: () -> Unit) {
 }
 
 @Composable
-private fun FolderCard(folder: GalleryFolder, onClick: () -> Unit) {
+private fun FolderCard(folder: GalleryFolder, strings: AppStrings, onClick: () -> Unit) {
     FolderTile(
         title = folder.displayName,
-        subtitle = "${folder.itemCount} items",
+        subtitle = strings.itemsCount(folder.itemCount),
         coverUri = folder.coverUri,
         icon = null,
         onClick = onClick,

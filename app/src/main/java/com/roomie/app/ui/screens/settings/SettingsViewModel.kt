@@ -6,6 +6,7 @@ import com.roomie.app.data.media.GalleryFolder
 import com.roomie.app.data.media.MediaRepository
 import com.roomie.app.data.media.SortOrder
 import com.roomie.app.data.settings.CardAnimationStyle
+import com.roomie.app.data.settings.LanguageMode
 import com.roomie.app.data.settings.RoomieSettings
 import com.roomie.app.data.settings.SettingsRepository
 import com.roomie.app.data.settings.SwipeCardAction
@@ -79,6 +80,10 @@ class SettingsViewModel(
         viewModelScope.launch { settingsRepository.setCardAnimationStyle(style) }
     }
 
+    fun setLanguageMode(mode: LanguageMode) {
+        viewModelScope.launch { settingsRepository.setLanguageMode(mode) }
+    }
+
     fun applyGesturePreset(preset: SwipeGesturePreset) {
         viewModelScope.launch {
             settingsRepository.setSwipeActions(
@@ -94,14 +99,13 @@ class SettingsViewModel(
 /** Ready-made direction -> action mappings offered as one-tap presets in Settings; the four
  *  underlying settings stay individually editable below regardless of which preset was last used. */
 enum class SwipeGesturePreset(
-    val label: String,
     val left: SwipeCardAction,
     val right: SwipeCardAction,
     val up: SwipeCardAction,
     val down: SwipeCardAction,
 ) {
-    CLASSIC("Classic", SwipeCardAction.DELETE, SwipeCardAction.KEEP, SwipeCardAction.MOVE_TO_FOLDER, SwipeCardAction.POSTPONE),
-    BROWSE_AND_DELETE("Browse, delete up", SwipeCardAction.NONE, SwipeCardAction.NONE, SwipeCardAction.DELETE, SwipeCardAction.POSTPONE),
+    CLASSIC(SwipeCardAction.DELETE, SwipeCardAction.KEEP, SwipeCardAction.MOVE_TO_FOLDER, SwipeCardAction.POSTPONE),
+    BROWSE_AND_DELETE(SwipeCardAction.NONE, SwipeCardAction.NONE, SwipeCardAction.DELETE, SwipeCardAction.POSTPONE),
     ;
 
     companion object {

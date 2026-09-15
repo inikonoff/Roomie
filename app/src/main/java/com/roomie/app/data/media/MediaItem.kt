@@ -31,8 +31,7 @@ data class MediaItem(
 }
 
 /**
- * A swipeable unit: either a single photo/video, or a burst of photos collapsed into one card
- * (see [com.roomie.app.data.media.groupIntoUnits]).
+ * A single swipeable/deletable unit wrapping one photo or video.
  */
 data class MediaGroup(
     val key: String,
@@ -43,7 +42,6 @@ data class MediaGroup(
     }
 
     val cover: MediaItem get() = items.first()
-    val isBurst: Boolean get() = items.size > 1
     val totalSizeBytes: Long get() = items.sumOf { it.sizeBytes }
     val allUris: List<Uri> get() = items.map { it.uri }
 }
