@@ -45,6 +45,7 @@ data class SwipeUiState(
      *  past via "start at this photo"), for the "12 of 345" position counter. */
     val totalCount: Int = 0,
     val deletedCount: Int = 0,
+    val deletedBytes: Long = 0L,
     /** Left untouched, whether by an explicit Keep or a "do nothing" browse swipe — both leave the
      *  file exactly as it was, so they share one bucket in the progress bar. */
     val keptCount: Int = 0,
@@ -58,8 +59,6 @@ data class SwipeUiState(
 }
 
 data class SummaryUiState(val itemCount: Int, val freedBytes: Long)
-
-data class TrashConfirmationRequest(val intentSender: IntentSender, val groups: List<MediaGroup>)
 
 data class MoveConfirmationRequest(val intentSender: IntentSender, val group: MediaGroup, val targetRelativePath: String)
 
@@ -76,15 +75,8 @@ class SwipeSessionViewModel(
     private val _summaryState = MutableStateFlow<SummaryUiState?>(null)
     val summaryState: StateFlow<SummaryUiState?> = _summaryState.asStateFlow()
 
-    private val _trashConfirmationEvents = MutableSharedFlow<TrashConfirmationRequest>()
-    val trashConfirmationEvents: SharedFlow<TrashConfirmationRequest> = _trashConfirmationEvents
-
     private val _moveConfirmationEvents = MutableSharedFlow<MoveConfirmationRequest>()
     val moveConfirmationEvents: SharedFlow<MoveConfirmationRequest> = _moveConfirmationEvents
-
-    /** Items swiped left this session, awaiting review on the trash-preview screen. */
-    private val _pendingTrash = MutableStateFlow<List<MediaGroup>>(emptyList())
-    val pendingTrash: StateFlow<List<MediaGroup>> = _pendingTrash.asStateFlow()
 
     private val undoHistory = ArrayDeque<SwipeAction>(MAX_UNDO_HISTORY)
 
@@ -101,12 +93,10 @@ class SwipeSessionViewModel(
     private var currentSettings: RoomieSettings = RoomieSettings()
 
     /** Identifies the folder/period/start-point [loadFolder] last actually loaded. Navigating to
-     *  the trash-preview screen and back disposes and recomposes the swipe screen, which re-runs
-     *  its `LaunchedEffect(...) { loadFolder(...) }` with the same arguments — without this guard,
-     *  that re-ran the query against MediaStore (nothing has actually been deleted yet at that
-     *  point) and wiped [pendingTrash] and the delete/keep/postpone counters back to empty, making
-     *  swiped-away cards reappear and the progress bar reset. Cleared in [completeTrashing] since
-     *  that's the point a re-entry into the same folder should actually see fresh (smaller) data. */
+     *  another screen (e.g. the Trash folder) and back disposes and recomposes the swipe screen,
+     *  which re-runs its `LaunchedEffect(...) { loadFolder(...) }` with the same arguments — without
+     *  this guard, that re-ran the MediaStore query and reset the position back to the start of the
+     *  (filtered) folder instead of resuming where the user left off. */
     private var loadedSessionKey: String? = null
 
     init {
@@ -137,12 +127,16 @@ class SwipeSessionViewModel(
         loadedSessionKey = sessionKey
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, folderName = displayName, isStackExhausted = false) }
-            _pendingTrash.value = emptyList()
             undoHistory.clear()
             browseHistory.clear()
             pendingMoveJobs.clear()
             val sortOrder = settingsRepository.settings.first().sortOrder
+            // A swipe-deleted photo is still physically on disk (see TrashRepository) until the
+            // user empties the trash, so it must be filtered out here or it would just show back
+            // up the next time this folder is browsed.
+            val trashedIds = trashRepository.getTrashedStableIds()
             val groups = mediaRepository.getMediaGroups(bucketId, period, sortOrder)
+                .filterNot { group -> group.items.any { it.stableId in trashedIds } }
             val startIndex = startAtStableId
                 ?.let { id -> groups.indexOfFirst { group -> group.items.any { it.stableId == id } } }
                 ?.takeIf { it >= 0 }
@@ -156,6 +150,7 @@ class SwipeSessionViewModel(
                     isStackExhausted = stack.isEmpty(),
                     totalCount = groups.size,
                     deletedCount = 0,
+                    deletedBytes = 0L,
                     keptCount = 0,
                     postponedCount = 0,
                 )
@@ -189,7 +184,11 @@ class SwipeSessionViewModel(
         }
 
         when (action) {
-            SwipeCardAction.DELETE -> _pendingTrash.update { it + group }
+            // Trashed immediately, no confirmation needed — see TrashRepository's class doc for
+            // why this is safe (it never touches the real file or MediaStore).
+            SwipeCardAction.DELETE -> {
+                viewModelScope.launch { trashRepository.recordTrashed(listOf(group), currentSettings.trashRetentionDays) }
+            }
             SwipeCardAction.MOVE_TO_FOLDER -> requestMove(group)
             SwipeCardAction.NONE -> {
                 if (browseHistory.size >= MAX_UNDO_HISTORY) browseHistory.removeFirst()
@@ -209,6 +208,7 @@ class SwipeSessionViewModel(
                 canUndo = undoHistory.isNotEmpty(),
                 isStackExhausted = newStack.isEmpty(),
                 deletedCount = it.deletedCount + if (action == SwipeCardAction.DELETE) 1 else 0,
+                deletedBytes = it.deletedBytes + if (action == SwipeCardAction.DELETE) group.totalSizeBytes else 0L,
                 keptCount = it.keptCount + if (action == SwipeCardAction.KEEP ||
                     action == SwipeCardAction.NONE ||
                     action == SwipeCardAction.MOVE_TO_FOLDER
@@ -227,7 +227,7 @@ class SwipeSessionViewModel(
     fun undo() {
         val action = undoHistory.removeLastOrNull() ?: return
         when (action.action) {
-            SwipeCardAction.DELETE -> _pendingTrash.update { it - action.group }
+            SwipeCardAction.DELETE -> viewModelScope.launch { trashRepository.cancelPendingTrash(action.group.items) }
             SwipeCardAction.MOVE_TO_FOLDER -> pendingMoveJobs.remove(action.group.key)?.cancel()
             SwipeCardAction.KEEP, SwipeCardAction.NONE, SwipeCardAction.POSTPONE -> Unit
         }
@@ -244,6 +244,7 @@ class SwipeSessionViewModel(
                 canUndo = undoHistory.isNotEmpty(),
                 isStackExhausted = false,
                 deletedCount = it.deletedCount - if (action.action == SwipeCardAction.DELETE) 1 else 0,
+                deletedBytes = it.deletedBytes - if (action.action == SwipeCardAction.DELETE) action.group.totalSizeBytes else 0L,
                 keptCount = it.keptCount - if (action.action == SwipeCardAction.KEEP ||
                     action.action == SwipeCardAction.NONE ||
                     action.action == SwipeCardAction.MOVE_TO_FOLDER
@@ -282,39 +283,12 @@ class SwipeSessionViewModel(
         viewModelScope.launch { mediaRepository.applyMove(request.group.allUris, request.targetRelativePath) }
     }
 
-    /** Trash-preview screen: exclude an item the user un-checked (it will be kept, not deleted). */
-    fun restoreFromPendingTrash(group: MediaGroup) {
-        _pendingTrash.update { it - group }
-    }
-
-    fun confirmDeleteSelected(selectedGroups: List<MediaGroup>) {
-        if (selectedGroups.isEmpty()) return
-        viewModelScope.launch {
-            val intentSender = trashRepository.buildSystemTrashRequest(selectedGroups)
-            if (intentSender != null) {
-                _trashConfirmationEvents.emit(TrashConfirmationRequest(intentSender, selectedGroups))
-            } else {
-                completeTrashing(selectedGroups)
-            }
-        }
-    }
-
-    fun onSystemTrashConfirmed(groups: List<MediaGroup>) {
-        viewModelScope.launch { completeTrashing(groups) }
-    }
-
-    private suspend fun completeTrashing(groups: List<MediaGroup>) {
-        // The folder's actual contents just changed on disk — a later re-entry (even with the
-        // exact same bucket/period/start-point) needs a real reload, not the stale-guard skip.
-        loadedSessionKey = null
-        val retentionDays = settingsRepository.settings.first().trashRetentionDays
-        trashRepository.recordTrashed(groups, retentionDays)
-        _summaryState.value = SummaryUiState(
-            itemCount = groups.sumOf { it.items.size },
-            freedBytes = groups.sumOf { it.totalSizeBytes },
-        )
-        _pendingTrash.update { it - groups.toSet() }
-        settingsRepository.resetSessionSwipeCount()
+    /** Builds the end-of-session summary from what actually happened this pass over the folder —
+     *  called right as the stack empties out, before navigating to the Summary screen. */
+    fun prepareSessionSummary() {
+        val state = _uiState.value
+        _summaryState.value = SummaryUiState(itemCount = state.deletedCount, freedBytes = state.deletedBytes)
+        viewModelScope.launch { settingsRepository.resetSessionSwipeCount() }
     }
 
     fun clearSummary() {

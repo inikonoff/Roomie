@@ -33,8 +33,8 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
         viewModelScope.launch { trashRepository.restoreFromTrash(listOf(entry)) }
     }
 
-    /** Permanently deletes [entries] now instead of waiting out the retention countdown — used by
-     *  both the per-item "delete forever" button and the "empty trash" bulk action. */
+    /** Permanently deletes [entries] now instead of waiting out the retention countdown — the
+     *  "empty trash" action passes every current entry. */
     fun requestDeleteForever(entries: List<TrashEntry>) {
         if (entries.isEmpty()) return
         viewModelScope.launch {

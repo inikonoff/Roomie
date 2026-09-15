@@ -19,7 +19,7 @@ class ViewModelFactory(private val container: AppContainer) : ViewModelProvider.
             FolderListViewModel(container.mediaRepository, container.trashRepository) as T
 
         FolderGridViewModel::class.java ->
-            FolderGridViewModel(container.mediaRepository, container.settingsRepository) as T
+            FolderGridViewModel(container.mediaRepository, container.settingsRepository, container.trashRepository) as T
 
         SwipeSessionViewModel::class.java ->
             SwipeSessionViewModel(

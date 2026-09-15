@@ -94,17 +94,10 @@ interface AppStrings {
     val folderIsClean: String
     val undo: String
 
-    // Trash folder / preview
+    // Trash folder
     fun trashTitle(count: Int): String
     val trashIsEmpty: String
     val restore: String
-    fun timeLeftDays(days: Long): String
-    fun timeLeftHours(hours: Long): String
-    fun timeLeftMinutes(minutes: Long): String
-    fun reviewTrashTitle(count: Int): String
-    fun deleteAll(count: Int): String
-    val nothingMarkedForDeletion: String
-    val keepThisItem: String
 
     // Summary
     val allCleanedUp: String
@@ -204,13 +197,6 @@ object EnglishStrings : AppStrings {
     override fun trashTitle(count: Int) = "Trash ($count)"
     override val trashIsEmpty = "Trash is empty."
     override val restore = "Restore"
-    override fun timeLeftDays(days: Long) = "${days}d left"
-    override fun timeLeftHours(hours: Long) = "${hours}h left"
-    override fun timeLeftMinutes(minutes: Long) = "${minutes}m left"
-    override fun reviewTrashTitle(count: Int) = "Review trash ($count)"
-    override fun deleteAll(count: Int) = "Delete all ($count)"
-    override val nothingMarkedForDeletion = "Nothing marked for deletion."
-    override val keepThisItem = "Keep this item"
 
     override val allCleanedUp = "All cleaned up!"
     override fun itemsRemoved(count: Int) = "$count item${if (count == 1) "" else "s"} removed"
@@ -310,13 +296,6 @@ object RussianStrings : AppStrings {
     override fun trashTitle(count: Int) = "Корзина ($count)"
     override val trashIsEmpty = "Корзина пуста."
     override val restore = "Восстановить"
-    override fun timeLeftDays(days: Long) = "осталось ${days} дн."
-    override fun timeLeftHours(hours: Long) = "осталось ${hours} ч."
-    override fun timeLeftMinutes(minutes: Long) = "осталось ${minutes} мин."
-    override fun reviewTrashTitle(count: Int) = "Просмотр корзины ($count)"
-    override fun deleteAll(count: Int) = "Удалить всё ($count)"
-    override val nothingMarkedForDeletion = "Ничего не отмечено для удаления."
-    override val keepThisItem = "Оставить этот файл"
 
     override val allCleanedUp = "Всё убрано!"
     override fun itemsRemoved(count: Int) = "Удалено объектов: $count"

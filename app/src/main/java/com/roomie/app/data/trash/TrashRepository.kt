@@ -11,20 +11,20 @@ import java.io.File
 import com.roomie.app.data.db.TrashDao
 import com.roomie.app.data.db.TrashEntry
 import com.roomie.app.data.media.MediaGroup
+import com.roomie.app.data.media.MediaItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
- * Owns the "one system dialog per session" flow: batches every card the user swiped left into a
- * single [MediaStore.createTrashRequest] (API 30+) and records our own retention countdown in
- * Room so [com.roomie.app.work.TrashCleanupWorker] can permanently delete on the user's configured
- * schedule (1/3/7/30 days) instead of whatever the OS would otherwise pick.
- *
- * On API 26-29, `createTrashRequest` does not exist. There the file simply stays put and visible
- * until the retention window elapses, at which point the worker deletes it directly — an accepted
- * MVP simplification for pre-scoped-storage devices (see TZ section 8.2, "Legacy Android").
+ * A swipe-delete is a *soft* trash: [recordTrashed] only ever writes to Room, immediately, the
+ * moment the user swipes — it never touches MediaStore or shows a system dialog, so browsing and
+ * deleting stays completely uninterrupted no matter how many photos get swiped away. The file
+ * itself is untouched on disk until the user visits the Trash folder and empties it, at which
+ * point [permanentlyDelete] (or the [com.roomie.app.work.TrashCleanupWorker] schedule, via
+ * [permanentlyDeleteExpired]) does the real, irreversible deletion — the one place a system
+ * confirmation dialog (API 30+, [buildDeleteRequest]) is expected and appropriate.
  */
 class TrashRepository(
     private val context: Context,
@@ -32,10 +32,16 @@ class TrashRepository(
 ) {
     private val resolver get() = context.contentResolver
 
-    /** Persistent view of everything currently trashed (survives app restarts, unlike the
-     *  in-session [com.roomie.app.ui.screens.swipe.SwipeSessionViewModel.pendingTrash]) — backs the
-     *  Trash folder on the main screen. */
+    /** Persistent view of everything currently trashed (survives app restarts) — backs the Trash
+     *  folder on the main screen. */
     fun observeTrash(): Flow<List<TrashEntry>> = trashDao.observeAll()
+
+    /** Every stable id currently sitting in the trash, so a folder/grid query can exclude them —
+     *  a swiped-away photo is still physically on disk (see class doc) and would otherwise keep
+     *  showing up in normal browsing. */
+    suspend fun getTrashedStableIds(): Set<String> = withContext(Dispatchers.IO) {
+        trashDao.getAllStableIds().toSet()
+    }
 
     /** Un-trashes [entries]: clears MediaStore's own IS_TRASHED flag (Q+, no consent needed to
      *  un-hide something the user still owns) and drops our retention bookkeeping. Best-effort —
@@ -57,18 +63,8 @@ class TrashRepository(
         trashDao.deleteByIds(entries.map { it.stableId })
     }
 
-    /**
-     * Returns the [IntentSender] for the single system confirmation dialog on API 30+, or null on
-     * older versions (nothing to confirm) or when [groups] is empty.
-     */
-    fun buildSystemTrashRequest(groups: List<MediaGroup>): IntentSender? {
-        if (groups.isEmpty() || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
-        val uris = groups.flatMap { it.allUris }
-        val pendingIntent = MediaStore.createTrashRequest(resolver, uris, /* trashed = */ true)
-        return pendingIntent.intentSender
-    }
-
-    /** Call once the system dialog (if any) has been confirmed, to start our retention countdown. */
+    /** Called immediately when the user swipes a card away — see the class doc for why this never
+     *  touches MediaStore. */
     suspend fun recordTrashed(groups: List<MediaGroup>, retentionDays: Int) = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val deleteAt = now + TimeUnit.DAYS.toMillis(retentionDays.toLong())
@@ -87,6 +83,12 @@ class TrashRepository(
             }
         }
         trashDao.insertAll(entries)
+    }
+
+    /** Undo, right after a swipe: since [recordTrashed] never touched MediaStore, un-trashing is
+     *  just dropping the Room rows — the file was never actually modified. */
+    suspend fun cancelPendingTrash(items: List<MediaItem>) = withContext(Dispatchers.IO) {
+        trashDao.deleteByIds(items.map { it.stableId })
     }
 
     /** Runs on [com.roomie.app.work.TrashCleanupWorker]'s schedule. */
@@ -113,16 +115,8 @@ class TrashRepository(
      */
     fun buildDeleteRequest(entries: List<TrashEntry>): IntentSender? {
         if (entries.isEmpty() || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
-        return try {
-            val uris = entries.map { Uri.parse(it.uri) }
-            MediaStore.createDeleteRequest(resolver, uris).intentSender
-        } catch (e: Exception) {
-            // Falls through to the direct-delete path in permanentlyDelete()/deleteEntries(),
-            // which itself degrades gracefully (skips anything needing consent it can't get)
-            // instead of crashing — better than taking the whole app down on a request the OS
-            // won't build for some reason.
-            null
-        }
+        val uris = entries.map { Uri.parse(it.uri) }
+        return MediaStore.createDeleteRequest(resolver, uris).intentSender
     }
 
     private suspend fun deleteEntries(entries: List<TrashEntry>): CleanupResult {

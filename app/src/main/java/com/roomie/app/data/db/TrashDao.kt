@@ -18,6 +18,9 @@ interface TrashDao {
     @Query("SELECT * FROM trash_entries WHERE permanentDeleteAtMillis <= :nowMillis")
     suspend fun getExpired(nowMillis: Long): List<TrashEntry>
 
+    @Query("SELECT stableId FROM trash_entries")
+    suspend fun getAllStableIds(): List<String>
+
     @Query("DELETE FROM trash_entries WHERE stableId IN (:stableIds)")
     suspend fun deleteByIds(stableIds: List<String>)
 

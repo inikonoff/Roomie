@@ -25,8 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Undo
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -92,10 +90,9 @@ fun SwipeScreen(
     onBack: () -> Unit,
     onStackExhausted: () -> Unit,
     onLimitReached: () -> Unit,
-    onOpenTrashPreview: () -> Unit,
+    onOpenTrash: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val pendingTrash by viewModel.pendingTrash.collectAsState()
     val strings = LocalAppStrings.current
 
     LaunchedEffect(uiState.hasReachedLimit) {
@@ -116,12 +113,8 @@ fun SwipeScreen(
                     }
                 },
                 actions = {
-                    if (pendingTrash.isNotEmpty()) {
-                        IconButton(onClick = onOpenTrashPreview) {
-                            BadgedBox(badge = { Badge { Text(pendingTrash.size.toString()) } }) {
-                                Icon(Icons.Filled.Delete, contentDescription = strings.reviewTrash)
-                            }
-                        }
+                    IconButton(onClick = onOpenTrash) {
+                        Icon(Icons.Filled.Delete, contentDescription = strings.reviewTrash)
                     }
                 },
             )

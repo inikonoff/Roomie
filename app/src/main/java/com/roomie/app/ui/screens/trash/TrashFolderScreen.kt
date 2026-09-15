@@ -8,7 +8,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,11 +17,10 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteForever
-import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -49,11 +47,14 @@ import com.roomie.app.ui.components.MediaThumbnail
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.ContainerShape
-import java.util.concurrent.TimeUnit
 
 /**
- * The persistent "Trash" folder shown on the main screen — every file Roomie has trashed and is
- * still counting down on, browsable any time (not just mid-swipe-session).
+ * The persistent "Trash" folder shown on the main screen — every file Roomie has soft-trashed
+ * (swiped away, but still physically on disk — see [com.roomie.app.data.trash.TrashRepository]'s
+ * class doc). Tiles are deliberately minimal, matching the old swipe-session review screen: just
+ * the photo and a single X to restore it. The only way to actually, permanently delete is the
+ * "empty trash" action in the top bar — a single deliberate action instead of a delete button on
+ * every tile.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -121,7 +122,6 @@ fun TrashFolderScreen(
                         strings = strings,
                         entry = entry,
                         onRestore = { viewModel.restore(entry) },
-                        onDeleteForever = { viewModel.requestDeleteForever(listOf(entry)) },
                     )
                 }
             }
@@ -153,68 +153,30 @@ private fun TrashEntryTile(
     strings: AppStrings,
     entry: TrashEntry,
     onRestore: () -> Unit,
-    onDeleteForever: () -> Unit,
 ) {
-    Column {
-        Box(
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .aspectRatio(1f)
+            .clip(ContainerShape)
+            .background(MaterialTheme.colorScheme.surface),
+    ) {
+        MediaThumbnail(
+            uri = Uri.parse(entry.uri),
+            isVideo = entry.stableId.startsWith("v"),
+            contentDescription = entry.displayName,
+            modifier = Modifier.fillMaxSize(),
+        )
+        IconButton(
+            onClick = onRestore,
             modifier = Modifier
-                .fillMaxSize()
-                .aspectRatio(1f)
-                .clip(ContainerShape)
-                .background(MaterialTheme.colorScheme.surface),
+                .align(Alignment.TopEnd)
+                .padding(4.dp)
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.55f)),
         ) {
-            MediaThumbnail(
-                uri = Uri.parse(entry.uri),
-                isVideo = entry.stableId.startsWith("v"),
-                contentDescription = entry.displayName,
-                modifier = Modifier.fillMaxSize(),
-            )
-            IconButton(
-                onClick = onRestore,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(4.dp)
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.55f)),
-            ) {
-                Icon(Icons.Filled.Restore, contentDescription = strings.restore, tint = Color.White)
-            }
-            IconButton(
-                onClick = onDeleteForever,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(4.dp)
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.55f)),
-            ) {
-                Icon(Icons.Filled.DeleteForever, contentDescription = strings.deleteForever, tint = Color.White)
-            }
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(4.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-            ) {
-                Text(
-                    formatTimeLeft(strings, entry.permanentDeleteAtMillis),
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelSmall,
-                )
-            }
+            Icon(Icons.Filled.Close, contentDescription = strings.restore, tint = Color.White)
         }
     }
-}
-
-private fun formatTimeLeft(strings: AppStrings, permanentDeleteAtMillis: Long): String {
-    val remainingMillis = (permanentDeleteAtMillis - System.currentTimeMillis()).coerceAtLeast(0)
-    val days = TimeUnit.MILLISECONDS.toDays(remainingMillis)
-    if (days >= 1) return strings.timeLeftDays(days)
-    val hours = TimeUnit.MILLISECONDS.toHours(remainingMillis)
-    if (hours >= 1) return strings.timeLeftHours(hours)
-    val minutes = TimeUnit.MILLISECONDS.toMinutes(remainingMillis)
-    return strings.timeLeftMinutes(minutes)
 }

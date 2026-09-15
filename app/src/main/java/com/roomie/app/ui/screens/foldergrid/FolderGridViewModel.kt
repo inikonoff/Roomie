@@ -6,6 +6,7 @@ import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.data.media.MediaRepository
 import com.roomie.app.data.media.PeriodFilter
 import com.roomie.app.data.settings.SettingsRepository
+import com.roomie.app.data.trash.TrashRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +24,7 @@ data class FolderGridUiState(
 class FolderGridViewModel(
     private val mediaRepository: MediaRepository,
     private val settingsRepository: SettingsRepository,
+    private val trashRepository: TrashRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FolderGridUiState())
@@ -32,7 +34,11 @@ class FolderGridViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             val sortOrder = settingsRepository.settings.first().sortOrder
+            // A swipe-deleted photo stays on disk until the trash is emptied, so it must be
+            // excluded here too or it would still show up when browsing the folder grid.
+            val trashedIds = trashRepository.getTrashedStableIds()
             val groups = mediaRepository.getMediaGroups(bucketId, period, sortOrder)
+                .filterNot { group -> group.items.any { it.stableId in trashedIds } }
             _uiState.update { it.copy(groups = groups, isLoading = false) }
         }
     }

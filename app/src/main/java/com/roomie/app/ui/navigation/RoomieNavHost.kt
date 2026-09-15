@@ -13,7 +13,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.roomie.app.ui.screens.swipe.MoveConfirmationRequest
-import com.roomie.app.ui.screens.swipe.TrashConfirmationRequest
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -33,7 +32,6 @@ import com.roomie.app.ui.screens.swipe.SwipeScreen
 import com.roomie.app.ui.screens.swipe.SwipeSessionViewModel
 import com.roomie.app.ui.screens.trash.TrashFolderScreen
 import com.roomie.app.ui.screens.trash.TrashFolderViewModel
-import com.roomie.app.ui.screens.trash.TrashPreviewScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -41,7 +39,6 @@ private object Routes {
     const val FOLDERS = "folders"
     const val FOLDER_GRID = "folder_grid/{bucketId}/{displayName}/{period}"
     const val SWIPE = "swipe/{bucketId}/{displayName}/{period}/{startAt}"
-    const val TRASH_PREVIEW = "trash_preview"
     const val TRASH_FOLDER = "trash_folder"
     const val SUMMARY = "summary"
     const val SWIPE_LIMIT = "swipe_limit"
@@ -68,39 +65,15 @@ private object Routes {
 fun RoomieNavHost(viewModelFactory: ViewModelFactory) {
     val navController = rememberNavController()
 
-    // Activity-scoped: the swipe/trash-preview/summary/limit screens are one continuous flow and
-    // share this single session's in-memory state (stack, undo history, pending trash).
+    // Activity-scoped: the swipe/summary/limit screens are one continuous flow and share this
+    // single session's in-memory state (stack, undo history).
     val swipeSessionViewModel: SwipeSessionViewModel = viewModel(factory = viewModelFactory)
 
-    // Lives here, not inside the swipe destination: "Delete all" is pressed from the trash-preview
-    // screen, by which point the swipe screen has already left composition, so its own collector
-    // would never see the event. This host composable stays alive for the whole app session.
-    //
+    // For the write access needed to move a swiped card into the configured target folder.
     // launch() only starts the system confirmation activity — it returns immediately, well before
-    // the user has even seen the dialog. The actual trash/write grant is only real once the result
+    // the user has even seen the dialog. The actual write grant is only real once the result
     // callback below fires with RESULT_OK, so the pending request is stashed here and acted on
-    // there, never right after launch() (that used to fire unconditionally, before the user had
-    // answered anything, which is why nothing was actually getting trashed/moved).
-    var pendingTrashRequest by remember { mutableStateOf<TrashConfirmationRequest?>(null) }
-    val intentSenderLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartIntentSenderForResult(),
-    ) { result ->
-        val request = pendingTrashRequest
-        pendingTrashRequest = null
-        if (request != null && result.resultCode == Activity.RESULT_OK) {
-            swipeSessionViewModel.onSystemTrashConfirmed(request.groups)
-        }
-    }
-
-    LaunchedEffect(swipeSessionViewModel) {
-        swipeSessionViewModel.trashConfirmationEvents.collect { request ->
-            pendingTrashRequest = request
-            intentSenderLauncher.launch(IntentSenderRequest.Builder(request.intentSender).build())
-        }
-    }
-
-    // Same pattern as trashing, for the write access needed to move a swiped card into the
-    // configured target folder.
+    // there, never right after launch().
     var pendingMoveRequest by remember { mutableStateOf<MoveConfirmationRequest?>(null) }
     val moveIntentSenderLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult(),
@@ -192,35 +165,15 @@ fun RoomieNavHost(viewModelFactory: ViewModelFactory) {
                 displayName = displayName,
                 period = period,
                 startAtStableId = startAtStableId,
-                onBack = {
-                    // Nothing swiped left was actually trashed until "Delete all" ran — leaving
-                    // early used to silently discard every pending swipe this session, since only
-                    // that button on the trash-preview screen committed to Room/MediaStore. The
-                    // review already happened one card at a time while swiping, so commit it now
-                    // rather than detour through that screen again; the system consent dialog (if
-                    // any) still shows via the NavHost-level collector above regardless of which
-                    // screen is on top by the time the user answers it.
-                    val pending = swipeSessionViewModel.pendingTrash.value
-                    if (pending.isNotEmpty()) {
-                        swipeSessionViewModel.confirmDeleteSelected(pending)
-                    }
-                    navController.popBackStack()
-                },
-                onStackExhausted = { navController.navigate(Routes.TRASH_PREVIEW) },
-                onLimitReached = { navController.navigate(Routes.SWIPE_LIMIT) },
-                onOpenTrashPreview = { navController.navigate(Routes.TRASH_PREVIEW) },
-            )
-        }
-
-        composable(Routes.TRASH_PREVIEW) {
-            TrashPreviewScreen(
-                viewModel = swipeSessionViewModel,
+                // Every swipe-delete already committed to the trash the instant it happened (see
+                // SwipeSessionViewModel.swipe) — there is nothing left to confirm or commit here.
                 onBack = { navController.popBackStack() },
-                onDeleteConfirmed = {
-                    navController.navigate(Routes.SUMMARY) {
-                        popUpTo(Routes.FOLDERS)
-                    }
+                onStackExhausted = {
+                    swipeSessionViewModel.prepareSessionSummary()
+                    navController.navigate(Routes.SUMMARY) { popUpTo(Routes.FOLDERS) }
                 },
+                onLimitReached = { navController.navigate(Routes.SWIPE_LIMIT) },
+                onOpenTrash = { navController.navigate(Routes.TRASH_FOLDER) },
             )
         }
 
@@ -265,7 +218,7 @@ private fun SwipeSessionEntry(
     onBack: () -> Unit,
     onStackExhausted: () -> Unit,
     onLimitReached: () -> Unit,
-    onOpenTrashPreview: () -> Unit,
+    onOpenTrash: () -> Unit,
 ) {
     LaunchedEffect(bucketId, displayName, period, startAtStableId) {
         viewModel.loadFolder(bucketId, displayName, period, startAtStableId)
@@ -275,6 +228,6 @@ private fun SwipeSessionEntry(
         onBack = onBack,
         onStackExhausted = onStackExhausted,
         onLimitReached = onLimitReached,
-        onOpenTrashPreview = onOpenTrashPreview,
+        onOpenTrash = onOpenTrash,
     )
 }
