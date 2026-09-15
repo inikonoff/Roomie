@@ -100,6 +100,15 @@ class SwipeSessionViewModel(
 
     private var currentSettings: RoomieSettings = RoomieSettings()
 
+    /** Identifies the folder/period/start-point [loadFolder] last actually loaded. Navigating to
+     *  the trash-preview screen and back disposes and recomposes the swipe screen, which re-runs
+     *  its `LaunchedEffect(...) { loadFolder(...) }` with the same arguments — without this guard,
+     *  that re-ran the query against MediaStore (nothing has actually been deleted yet at that
+     *  point) and wiped [pendingTrash] and the delete/keep/postpone counters back to empty, making
+     *  swiped-away cards reappear and the progress bar reset. Cleared in [completeTrashing] since
+     *  that's the point a re-entry into the same folder should actually see fresh (smaller) data. */
+    private var loadedSessionKey: String? = null
+
     init {
         viewModelScope.launch {
             settingsRepository.settings.collectLatest { settings ->
@@ -123,6 +132,9 @@ class SwipeSessionViewModel(
      * rather than starting the swipe session cold.
      */
     fun loadFolder(bucketId: Long?, displayName: String, period: PeriodFilter, startAtStableId: String? = null) {
+        val sessionKey = "$bucketId|$displayName|$period|$startAtStableId"
+        if (sessionKey == loadedSessionKey) return
+        loadedSessionKey = sessionKey
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, folderName = displayName, isStackExhausted = false) }
             _pendingTrash.value = emptyList()
@@ -292,6 +304,9 @@ class SwipeSessionViewModel(
     }
 
     private suspend fun completeTrashing(groups: List<MediaGroup>) {
+        // The folder's actual contents just changed on disk — a later re-entry (even with the
+        // exact same bucket/period/start-point) needs a real reload, not the stale-guard skip.
+        loadedSessionKey = null
         val retentionDays = settingsRepository.settings.first().trashRetentionDays
         trashRepository.recordTrashed(groups, retentionDays)
         _summaryState.value = SummaryUiState(

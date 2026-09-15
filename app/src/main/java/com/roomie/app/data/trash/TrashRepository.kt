@@ -113,8 +113,16 @@ class TrashRepository(
      */
     fun buildDeleteRequest(entries: List<TrashEntry>): IntentSender? {
         if (entries.isEmpty() || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
-        val uris = entries.map { Uri.parse(it.uri) }
-        return MediaStore.createDeleteRequest(resolver, uris).intentSender
+        return try {
+            val uris = entries.map { Uri.parse(it.uri) }
+            MediaStore.createDeleteRequest(resolver, uris).intentSender
+        } catch (e: Exception) {
+            // Falls through to the direct-delete path in permanentlyDelete()/deleteEntries(),
+            // which itself degrades gracefully (skips anything needing consent it can't get)
+            // instead of crashing — better than taking the whole app down on a request the OS
+            // won't build for some reason.
+            null
+        }
     }
 
     private suspend fun deleteEntries(entries: List<TrashEntry>): CleanupResult {
