@@ -117,7 +117,7 @@ class TrashRepository(
         return MediaStore.createDeleteRequest(resolver, uris).intentSender
     }
 
-    private fun deleteEntries(entries: List<TrashEntry>): CleanupResult {
+    private suspend fun deleteEntries(entries: List<TrashEntry>): CleanupResult {
         var freedBytes = 0L
         val deletedIds = mutableListOf<String>()
         val affectedDirs = mutableSetOf<File>()
