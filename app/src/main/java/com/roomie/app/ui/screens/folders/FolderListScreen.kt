@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -55,8 +56,10 @@ fun FolderListScreen(
     viewModel: FolderListViewModel,
     onOpenFolder: (bucketId: Long?, displayName: String, period: PeriodFilter) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenTrash: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val trashCount by viewModel.trashCount.collectAsState()
     val context = LocalContext.current
 
     val requiredPermissions = remember {
@@ -104,8 +107,10 @@ fun FolderListScreen(
                 modifier = Modifier.padding(padding),
                 folders = uiState.folders,
                 period = uiState.period,
+                trashCount = trashCount,
                 onPeriodSelected = viewModel::onPeriodSelected,
                 onOpenFolder = onOpenFolder,
+                onOpenTrash = onOpenTrash,
             )
         }
     }
@@ -148,8 +153,10 @@ private fun FolderGrid(
     modifier: Modifier = Modifier,
     folders: List<GalleryFolder>,
     period: PeriodFilter,
+    trashCount: Int,
     onPeriodSelected: (PeriodFilter) -> Unit,
     onOpenFolder: (Long?, String, PeriodFilter) -> Unit,
+    onOpenTrash: () -> Unit,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         PeriodFilterRow(selected = period, onSelected = onPeriodSelected)
@@ -165,6 +172,9 @@ private fun FolderGrid(
                     totalCount = folders.sumOf { it.itemCount },
                     onClick = { onOpenFolder(null, "All photos", period) },
                 )
+            }
+            item {
+                TrashCard(itemCount = trashCount, onClick = onOpenTrash)
             }
             gridItems(folders, key = { it.bucketId }) { folder ->
                 FolderCard(
@@ -205,6 +215,17 @@ private fun AllPhotosCard(totalCount: Int, onClick: () -> Unit) {
         subtitle = "$totalCount items",
         coverUri = null,
         icon = Icons.Filled.Photo,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun TrashCard(itemCount: Int, onClick: () -> Unit) {
+    FolderTile(
+        title = "Trash",
+        subtitle = if (itemCount == 0) "Empty" else "$itemCount items",
+        coverUri = null,
+        icon = Icons.Filled.Delete,
         onClick = onClick,
     )
 }

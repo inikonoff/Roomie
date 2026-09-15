@@ -1,6 +1,7 @@
 package com.roomie.app.data.trash
 
 import android.app.RecoverableSecurityException
+import android.content.ContentValues
 import android.content.Context
 import android.content.IntentSender
 import android.net.Uri
@@ -11,6 +12,7 @@ import com.roomie.app.data.db.TrashDao
 import com.roomie.app.data.db.TrashEntry
 import com.roomie.app.data.media.MediaGroup
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
@@ -29,6 +31,31 @@ class TrashRepository(
     private val trashDao: TrashDao,
 ) {
     private val resolver get() = context.contentResolver
+
+    /** Persistent view of everything currently trashed (survives app restarts, unlike the
+     *  in-session [com.roomie.app.ui.screens.swipe.SwipeSessionViewModel.pendingTrash]) — backs the
+     *  Trash folder on the main screen. */
+    fun observeTrash(): Flow<List<TrashEntry>> = trashDao.observeAll()
+
+    /** Un-trashes [entries]: clears MediaStore's own IS_TRASHED flag (Q+, no consent needed to
+     *  un-hide something the user still owns) and drops our retention bookkeeping. Best-effort —
+     *  an entry whose underlying file already vanished just stays removed from Room. */
+    suspend fun restoreFromTrash(entries: List<TrashEntry>) = withContext(Dispatchers.IO) {
+        if (entries.isEmpty()) return@withContext
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply { put(MediaStore.MediaColumns.IS_TRASHED, 0) }
+            for (entry in entries) {
+                try {
+                    resolver.update(Uri.parse(entry.uri), values, null, null)
+                } catch (_: RecoverableSecurityException) {
+                    // Needs a fresh user consent; the Room row is still cleared below so Roomie's
+                    // own countdown won't delete it regardless.
+                } catch (_: SecurityException) {
+                }
+            }
+        }
+        trashDao.deleteByIds(entries.map { it.stableId })
+    }
 
     /**
      * Returns the [IntentSender] for the single system confirmation dialog on API 30+, or null on

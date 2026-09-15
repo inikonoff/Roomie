@@ -29,6 +29,8 @@ import com.roomie.app.ui.screens.settings.SettingsViewModel
 import com.roomie.app.ui.screens.summary.SummaryScreen
 import com.roomie.app.ui.screens.swipe.SwipeScreen
 import com.roomie.app.ui.screens.swipe.SwipeSessionViewModel
+import com.roomie.app.ui.screens.trash.TrashFolderScreen
+import com.roomie.app.ui.screens.trash.TrashFolderViewModel
 import com.roomie.app.ui.screens.trash.TrashPreviewScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -37,6 +39,7 @@ private object Routes {
     const val FOLDERS = "folders"
     const val SWIPE = "swipe/{bucketId}/{displayName}/{period}"
     const val TRASH_PREVIEW = "trash_preview"
+    const val TRASH_FOLDER = "trash_folder"
     const val SUMMARY = "summary"
     const val SWIPE_LIMIT = "swipe_limit"
     const val SETTINGS = "settings"
@@ -114,6 +117,15 @@ fun RoomieNavHost(viewModelFactory: ViewModelFactory) {
                     navController.navigate(Routes.swipe(bucketId, displayName, period))
                 },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onOpenTrash = { navController.navigate(Routes.TRASH_FOLDER) },
+            )
+        }
+
+        composable(Routes.TRASH_FOLDER) {
+            val trashFolderViewModel: TrashFolderViewModel = viewModel(factory = viewModelFactory)
+            TrashFolderScreen(
+                viewModel = trashFolderViewModel,
+                onBack = { navController.popBackStack() },
             )
         }
 

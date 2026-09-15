@@ -7,6 +7,7 @@ import com.roomie.app.AppContainer
 import com.roomie.app.ui.screens.folders.FolderListViewModel
 import com.roomie.app.ui.screens.settings.SettingsViewModel
 import com.roomie.app.ui.screens.swipe.SwipeSessionViewModel
+import com.roomie.app.ui.screens.trash.TrashFolderViewModel
 
 /** Manual DI: builds each screen's ViewModel from the [AppContainer] the Application owns. */
 class ViewModelFactory(private val container: AppContainer) : ViewModelProvider.Factory {
@@ -14,7 +15,7 @@ class ViewModelFactory(private val container: AppContainer) : ViewModelProvider.
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T = when (modelClass) {
         FolderListViewModel::class.java ->
-            FolderListViewModel(container.mediaRepository) as T
+            FolderListViewModel(container.mediaRepository, container.trashRepository) as T
 
         SwipeSessionViewModel::class.java ->
             SwipeSessionViewModel(
@@ -26,6 +27,9 @@ class ViewModelFactory(private val container: AppContainer) : ViewModelProvider.
 
         SettingsViewModel::class.java ->
             SettingsViewModel(container.settingsRepository, container.mediaRepository) as T
+
+        TrashFolderViewModel::class.java ->
+            TrashFolderViewModel(container.trashRepository) as T
 
         else -> throw IllegalArgumentException("Unknown ViewModel class: $modelClass")
     }

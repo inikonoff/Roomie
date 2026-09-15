@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerInputScope
@@ -297,6 +298,7 @@ private fun DraggableCard(
     val offset = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
     val scale = remember(group.key) { Animatable(1f) }
     val zoomPan = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
+    var zoomOrigin by remember(group.key) { mutableStateOf(TransformOrigin.Center) }
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     var pastThreshold by remember(group.key) { mutableStateOf(false) }
@@ -312,6 +314,7 @@ private fun DraggableCard(
             .graphicsLayer {
                 scaleX = scale.value
                 scaleY = scale.value
+                transformOrigin = zoomOrigin
                 translationX = offset.value.x + zoomPan.value.x
                 translationY = offset.value.y + zoomPan.value.y
                 rotationZ = (offset.value.x / thresholdPx) * 12f
@@ -346,7 +349,8 @@ private fun DraggableCard(
                             scope.launch { offset.animateTo(Offset.Zero, SWIPE_SPRING) }
                         }
                     },
-                    onZoomStart = {
+                    onZoomStart = { origin ->
+                        zoomOrigin = origin
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         scope.launch { scale.animateTo(MAX_PEEK_ZOOM, ZOOM_SPRING) }
                     },
@@ -384,12 +388,12 @@ private fun DraggableCard(
 private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
     onDrag: (Offset) -> Unit,
     onDragEnd: () -> Unit,
-    onZoomStart: () -> Unit,
+    onZoomStart: (TransformOrigin) -> Unit,
     onZoomPan: (Offset) -> Unit,
     onZoomEnd: () -> Unit,
 ) {
     awaitEachGesture {
-        awaitFirstDown(requireUnconsumed = false)
+        val down = awaitFirstDown(requireUnconsumed = false)
         var totalDrag = Offset.Zero
         var isZoom = false
         var isSwipe = false
@@ -415,7 +419,13 @@ private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
         }
 
         if (isZoom) {
-            onZoomStart()
+            // Zoom expands from right under the finger, not the card's center, so whatever the
+            // user pressed on is what stays put as the photo grows.
+            val origin = TransformOrigin(
+                (down.position.x / size.width).coerceIn(0f, 1f),
+                (down.position.y / size.height).coerceIn(0f, 1f),
+            )
+            onZoomStart(origin)
             while (true) {
                 val event = awaitPointerEvent()
                 val change = event.changes.firstOrNull { it.positionChanged() }
