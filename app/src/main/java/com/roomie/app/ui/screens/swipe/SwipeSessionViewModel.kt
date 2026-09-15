@@ -9,6 +9,7 @@ import com.roomie.app.data.media.PeriodFilter
 import com.roomie.app.data.monetization.MonetizationGateway
 import com.roomie.app.data.monetization.PurchaseResult
 import com.roomie.app.data.monetization.RewardResult
+import com.roomie.app.data.settings.CardAnimationStyle
 import com.roomie.app.data.settings.RoomieSettings
 import com.roomie.app.data.settings.SettingsRepository
 import com.roomie.app.data.settings.SwipeCardAction
@@ -39,6 +40,7 @@ data class SwipeUiState(
     val hasReachedLimit: Boolean = false,
     val canUndo: Boolean = false,
     val isStackExhausted: Boolean = false,
+    val cardAnimationStyle: CardAnimationStyle = CardAnimationStyle.CLASSIC,
 ) {
     val currentGroup: MediaGroup? get() = stack.firstOrNull()
 }
@@ -74,6 +76,11 @@ class SwipeSessionViewModel(
 
     private val undoHistory = ArrayDeque<SwipeAction>(MAX_UNDO_HISTORY)
 
+    /** Cards passed with a "do nothing" (browsing) swipe, so a left-swipe-to-go-back has something
+     *  to return to. Separate from [undoHistory] on purpose: a plain browse-back must never risk
+     *  un-deleting or un-moving something a *different* direction actually acted on. */
+    private val browseHistory = ArrayDeque<MediaGroup>(MAX_UNDO_HISTORY)
+
     /** Jobs performing an in-flight "move to folder", keyed by group, so undo can cancel one that
      *  hasn't applied yet. A move that already completed can't be reversed by undo (accepted MVP
      *  limitation — see requestMove). */
@@ -90,22 +97,34 @@ class SwipeSessionViewModel(
                         sessionSwipeCount = settings.sessionSwipeCount,
                         freeSwipeLimit = settings.freeSwipeLimit,
                         hasReachedLimit = settings.hasReachedSwipeLimit,
+                        cardAnimationStyle = settings.cardAnimationStyle,
                     )
                 }
             }
         }
     }
 
-    fun loadFolder(bucketId: Long?, displayName: String, period: PeriodFilter) {
+    /**
+     * [startAtStableId], when given, skips straight to that item (and everything after it) instead
+     * of the beginning — used when the user picks a specific photo off the folder's full grid
+     * rather than starting the swipe session cold.
+     */
+    fun loadFolder(bucketId: Long?, displayName: String, period: PeriodFilter, startAtStableId: String? = null) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, folderName = displayName, isStackExhausted = false) }
             _pendingTrash.value = emptyList()
             undoHistory.clear()
+            browseHistory.clear()
             pendingMoveJobs.clear()
             val sortOrder = settingsRepository.settings.first().sortOrder
             val groups = mediaRepository.getMediaGroups(bucketId, period, sortOrder)
+            val startIndex = startAtStableId
+                ?.let { id -> groups.indexOfFirst { group -> group.items.any { it.stableId == id } } }
+                ?.takeIf { it >= 0 }
+                ?: 0
+            val stack = groups.drop(startIndex)
             _uiState.update {
-                it.copy(stack = groups, isLoading = false, canUndo = false, isStackExhausted = groups.isEmpty())
+                it.copy(stack = stack, isLoading = false, canUndo = false, isStackExhausted = stack.isEmpty())
             }
         }
     }
@@ -123,10 +142,26 @@ class SwipeSessionViewModel(
         if (state.hasReachedLimit) return
 
         val action = actionFor(direction)
+
+        // Plain browsing (no decision either way): left goes back to what you just saw instead of
+        // just advancing like every other direction/action does. Falls through to a normal forward
+        // advance if there's nothing to go back to yet, so the gesture never just does nothing.
+        if (direction == SwipeDirection.LEFT && action == SwipeCardAction.NONE) {
+            val previous = browseHistory.removeLastOrNull()
+            if (previous != null) {
+                _uiState.update { it.copy(stack = listOf(previous) + it.stack, isStackExhausted = false) }
+                return
+            }
+        }
+
         when (action) {
             SwipeCardAction.DELETE -> _pendingTrash.update { it + group }
             SwipeCardAction.MOVE_TO_FOLDER -> requestMove(group)
-            SwipeCardAction.KEEP, SwipeCardAction.NONE, SwipeCardAction.POSTPONE -> Unit
+            SwipeCardAction.NONE -> {
+                if (browseHistory.size >= MAX_UNDO_HISTORY) browseHistory.removeFirst()
+                browseHistory.addLast(group)
+            }
+            SwipeCardAction.KEEP, SwipeCardAction.POSTPONE -> Unit
         }
 
         pushUndo(SwipeAction(group, action))

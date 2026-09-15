@@ -21,6 +21,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.roomie.app.data.media.PeriodFilter
 import com.roomie.app.ui.ViewModelFactory
+import com.roomie.app.ui.screens.foldergrid.FolderGridScreen
+import com.roomie.app.ui.screens.foldergrid.FolderGridViewModel
 import com.roomie.app.ui.screens.folders.FolderListScreen
 import com.roomie.app.ui.screens.folders.FolderListViewModel
 import com.roomie.app.ui.screens.limit.SwipeLimitScreen
@@ -37,7 +39,8 @@ import java.net.URLEncoder
 
 private object Routes {
     const val FOLDERS = "folders"
-    const val SWIPE = "swipe/{bucketId}/{displayName}/{period}"
+    const val FOLDER_GRID = "folder_grid/{bucketId}/{displayName}/{period}"
+    const val SWIPE = "swipe/{bucketId}/{displayName}/{period}/{startAt}"
     const val TRASH_PREVIEW = "trash_preview"
     const val TRASH_FOLDER = "trash_folder"
     const val SUMMARY = "summary"
@@ -45,11 +48,19 @@ private object Routes {
     const val SETTINGS = "settings"
 
     const val ALL_PHOTOS_SENTINEL = "all"
+    const val NO_START_SENTINEL = "start"
 
-    fun swipe(bucketId: Long?, displayName: String, period: PeriodFilter): String {
+    fun folderGrid(bucketId: Long?, displayName: String, period: PeriodFilter): String {
         val encodedName = URLEncoder.encode(displayName, "UTF-8")
         val bucket = bucketId?.toString() ?: ALL_PHOTOS_SENTINEL
-        return "swipe/$bucket/$encodedName/${period.name}"
+        return "folder_grid/$bucket/$encodedName/${period.name}"
+    }
+
+    fun swipe(bucketId: Long?, displayName: String, period: PeriodFilter, startAtStableId: String?): String {
+        val encodedName = URLEncoder.encode(displayName, "UTF-8")
+        val bucket = bucketId?.toString() ?: ALL_PHOTOS_SENTINEL
+        val startAt = startAtStableId?.let { URLEncoder.encode(it, "UTF-8") } ?: NO_START_SENTINEL
+        return "swipe/$bucket/$encodedName/${period.name}/$startAt"
     }
 }
 
@@ -114,10 +125,37 @@ fun RoomieNavHost(viewModelFactory: ViewModelFactory) {
             FolderListScreen(
                 viewModel = folderListViewModel,
                 onOpenFolder = { bucketId, displayName, period ->
-                    navController.navigate(Routes.swipe(bucketId, displayName, period))
+                    navController.navigate(Routes.folderGrid(bucketId, displayName, period))
                 },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onOpenTrash = { navController.navigate(Routes.TRASH_FOLDER) },
+            )
+        }
+
+        composable(
+            route = Routes.FOLDER_GRID,
+            arguments = listOf(
+                navArgument("bucketId") { type = NavType.StringType },
+                navArgument("displayName") { type = NavType.StringType },
+                navArgument("period") { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val args = backStackEntry.arguments!!
+            val bucketIdArg = args.getString("bucketId")
+            val bucketId = bucketIdArg?.takeIf { it != Routes.ALL_PHOTOS_SENTINEL }?.toLongOrNull()
+            val displayName = URLDecoder.decode(args.getString("displayName") ?: "", "UTF-8")
+            val period = PeriodFilter.valueOf(args.getString("period") ?: PeriodFilter.ALL.name)
+
+            val folderGridViewModel: FolderGridViewModel = viewModel(factory = viewModelFactory)
+            FolderGridScreen(
+                viewModel = folderGridViewModel,
+                bucketId = bucketId,
+                displayName = displayName,
+                period = period,
+                onOpenSwipe = { startAtStableId ->
+                    navController.navigate(Routes.swipe(bucketId, displayName, period, startAtStableId))
+                },
+                onBack = { navController.popBackStack() },
             )
         }
 
@@ -135,6 +173,7 @@ fun RoomieNavHost(viewModelFactory: ViewModelFactory) {
                 navArgument("bucketId") { type = NavType.StringType },
                 navArgument("displayName") { type = NavType.StringType },
                 navArgument("period") { type = NavType.StringType },
+                navArgument("startAt") { type = NavType.StringType },
             ),
         ) { backStackEntry ->
             val args = backStackEntry.arguments!!
@@ -142,13 +181,31 @@ fun RoomieNavHost(viewModelFactory: ViewModelFactory) {
             val bucketId = bucketIdArg?.takeIf { it != Routes.ALL_PHOTOS_SENTINEL }?.toLongOrNull()
             val displayName = URLDecoder.decode(args.getString("displayName") ?: "", "UTF-8")
             val period = PeriodFilter.valueOf(args.getString("period") ?: PeriodFilter.ALL.name)
+            val startAtArg = args.getString("startAt")
+            val startAtStableId = startAtArg
+                ?.takeIf { it != Routes.NO_START_SENTINEL }
+                ?.let { URLDecoder.decode(it, "UTF-8") }
 
             SwipeSessionEntry(
                 viewModel = swipeSessionViewModel,
                 bucketId = bucketId,
                 displayName = displayName,
                 period = period,
-                onBack = { navController.popBackStack() },
+                startAtStableId = startAtStableId,
+                onBack = {
+                    // Nothing swiped left was actually trashed until "Delete all" ran — leaving
+                    // early used to silently discard every pending swipe this session, since only
+                    // that button on the trash-preview screen committed to Room/MediaStore. The
+                    // review already happened one card at a time while swiping, so commit it now
+                    // rather than detour through that screen again; the system consent dialog (if
+                    // any) still shows via the NavHost-level collector above regardless of which
+                    // screen is on top by the time the user answers it.
+                    val pending = swipeSessionViewModel.pendingTrash.value
+                    if (pending.isNotEmpty()) {
+                        swipeSessionViewModel.confirmDeleteSelected(pending)
+                    }
+                    navController.popBackStack()
+                },
                 onStackExhausted = { navController.navigate(Routes.TRASH_PREVIEW) },
                 onLimitReached = { navController.navigate(Routes.SWIPE_LIMIT) },
                 onOpenTrashPreview = { navController.navigate(Routes.TRASH_PREVIEW) },
@@ -204,13 +261,14 @@ private fun SwipeSessionEntry(
     bucketId: Long?,
     displayName: String,
     period: PeriodFilter,
+    startAtStableId: String?,
     onBack: () -> Unit,
     onStackExhausted: () -> Unit,
     onLimitReached: () -> Unit,
     onOpenTrashPreview: () -> Unit,
 ) {
-    LaunchedEffect(bucketId, displayName, period) {
-        viewModel.loadFolder(bucketId, displayName, period)
+    LaunchedEffect(bucketId, displayName, period, startAtStableId) {
+        viewModel.loadFolder(bucketId, displayName, period, startAtStableId)
     }
     SwipeScreen(
         viewModel = viewModel,

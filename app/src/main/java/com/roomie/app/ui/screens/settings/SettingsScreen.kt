@@ -20,7 +20,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -40,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.roomie.app.data.media.GalleryFolder
 import com.roomie.app.data.media.SortOrder
+import com.roomie.app.data.settings.CardAnimationStyle
 import com.roomie.app.data.settings.RoomieSettings
 import com.roomie.app.data.settings.SwipeCardAction
 import com.roomie.app.data.settings.ThemeMode
@@ -75,8 +75,14 @@ fun SettingsScreen(
             SectionTitle("Trash retention")
             RetentionSelector(settings.trashRetentionDays, viewModel::setTrashRetentionDays)
 
+            SectionTitle("Card animation")
+            CardAnimationStyleSelector(settings.cardAnimationStyle, viewModel::setCardAnimationStyle)
+
             SectionTitle("Swipe gestures")
-            GesturePresetRow(onPresetSelected = viewModel::applyGesturePreset)
+            GesturePresetRow(
+                selected = SwipeGesturePreset.matching(settings),
+                onPresetSelected = viewModel::applyGesturePreset,
+            )
             SwipeActionRow("Swipe right", settings.swipeRightAction, viewModel::setSwipeRightAction)
             SwipeActionRow("Swipe left", settings.swipeLeftAction, viewModel::setSwipeLeftAction)
             SwipeActionRow("Swipe up", settings.swipeUpAction, viewModel::setSwipeUpAction)
@@ -173,14 +179,40 @@ private fun SwipeCardAction.label(): String = when (this) {
     SwipeCardAction.NONE -> "Do nothing"
 }
 
+private fun CardAnimationStyle.label(): String = when (this) {
+    CardAnimationStyle.CLASSIC -> "Classic"
+    CardAnimationStyle.FADE -> "Fade"
+    CardAnimationStyle.SHRINK -> "Shrink"
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GesturePresetRow(onPresetSelected: (SwipeGesturePreset) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        SwipeGesturePreset.entries.forEach { preset ->
-            OutlinedButton(onClick = { onPresetSelected(preset) }) {
+private fun CardAnimationStyleSelector(current: CardAnimationStyle, onSelected: (CardAnimationStyle) -> Unit) {
+    val options = CardAnimationStyle.entries
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        options.forEachIndexed { index, style ->
+            SegmentedButton(
+                selected = current == style,
+                onClick = { onSelected(style) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+            ) {
+                Text(style.label())
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GesturePresetRow(selected: SwipeGesturePreset?, onPresetSelected: (SwipeGesturePreset) -> Unit) {
+    val options = SwipeGesturePreset.entries
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        options.forEachIndexed { index, preset ->
+            SegmentedButton(
+                selected = selected == preset,
+                onClick = { onPresetSelected(preset) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+            ) {
                 Text(preset.label)
             }
         }

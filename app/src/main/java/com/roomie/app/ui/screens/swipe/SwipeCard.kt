@@ -19,8 +19,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.size.Size
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.ui.theme.CardShape
 import java.util.concurrent.TimeUnit
@@ -36,7 +39,13 @@ fun SwipeCard(
             .background(MaterialTheme.colorScheme.surface, CardShape),
     ) {
         AsyncImage(
-            model = group.cover.uri,
+            // Requesting the source's own resolution instead of letting Coil downsample to this
+            // card's on-screen size — otherwise the long-press peek zoom just upscales an
+            // already-shrunk bitmap and looks like a blown-up thumbnail instead of a sharp photo.
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(group.cover.uri)
+                .size(Size.ORIGINAL)
+                .build(),
             contentDescription = group.cover.displayName,
             // The card is already sized to this item's own aspect ratio by the caller, so Fit
             // fills it exactly — showing photos in their native orientation instead of cropping

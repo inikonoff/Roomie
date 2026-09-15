@@ -114,6 +114,7 @@ class MediaRepository(private val context: Context) {
             add(MediaStore.Images.Media.SIZE)
             add(MediaStore.Images.Media.WIDTH)
             add(MediaStore.Images.Media.HEIGHT)
+            add(MediaStore.Images.Media.ORIENTATION)
             @Suppress("DEPRECATION")
             add(MediaStore.Images.Media.DATA)
         }.toTypedArray()
@@ -122,6 +123,7 @@ class MediaRepository(private val context: Context) {
 
         return query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, projection, selection, args) { cursor ->
             val id = cursor.getLong(MediaStore.Images.Media._ID)
+            val (width, height) = cursor.orientedSize(MediaStore.Images.Media.WIDTH, MediaStore.Images.Media.HEIGHT, MediaStore.Images.Media.ORIENTATION)
             MediaItem(
                 id = id,
                 uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id),
@@ -135,8 +137,8 @@ class MediaRepository(private val context: Context) {
                 sizeBytes = cursor.getLong(MediaStore.Images.Media.SIZE),
                 isVideo = false,
                 filePath = cursor.getStringOrEmpty(MediaStore.Images.Media.DATA).ifBlank { null },
-                width = cursor.getInt(MediaStore.Images.Media.WIDTH),
-                height = cursor.getInt(MediaStore.Images.Media.HEIGHT),
+                width = width,
+                height = height,
             )
         }
     }
@@ -239,6 +241,20 @@ class MediaRepository(private val context: Context) {
 
     private fun Cursor.getInt(column: String): Int =
         getColumnIndex(column).takeIf { it >= 0 }?.let { getInt(it) } ?: 0
+
+    /**
+     * MediaStore's WIDTH/HEIGHT columns often report the sensor's raw (un-rotated) pixel
+     * dimensions rather than the displayed ones — a photo shot in portrait can come back with
+     * width > height. Coil renders EXIF-rotated, so without this swap the card would be sized for
+     * the wrong orientation and show empty background bars down the sides. ORIENTATION is the EXIF
+     * rotation in degrees Roomie itself never applies, just uses to fix the pair up here.
+     */
+    private fun Cursor.orientedSize(widthColumn: String, heightColumn: String, orientationColumn: String): Pair<Int, Int> {
+        val width = getInt(widthColumn)
+        val height = getInt(heightColumn)
+        val orientation = getInt(orientationColumn)
+        return if (orientation == 90 || orientation == 270) height to width else width to height
+    }
 
     /** [dateTakenColumn] is only populated by camera apps; fall back to DATE_ADDED (seconds) otherwise. */
     private fun Cursor.dateTakenOrAdded(dateTakenColumn: String, dateAddedColumn: String): Long {

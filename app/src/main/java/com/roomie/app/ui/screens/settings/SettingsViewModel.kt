@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.roomie.app.data.media.GalleryFolder
 import com.roomie.app.data.media.MediaRepository
 import com.roomie.app.data.media.SortOrder
+import com.roomie.app.data.settings.CardAnimationStyle
 import com.roomie.app.data.settings.RoomieSettings
 import com.roomie.app.data.settings.SettingsRepository
 import com.roomie.app.data.settings.SwipeCardAction
@@ -74,6 +75,10 @@ class SettingsViewModel(
         viewModelScope.launch { settingsRepository.setThemeMode(mode) }
     }
 
+    fun setCardAnimationStyle(style: CardAnimationStyle) {
+        viewModelScope.launch { settingsRepository.setCardAnimationStyle(style) }
+    }
+
     fun applyGesturePreset(preset: SwipeGesturePreset) {
         viewModelScope.launch {
             settingsRepository.setSwipeActions(
@@ -97,4 +102,16 @@ enum class SwipeGesturePreset(
 ) {
     CLASSIC("Classic", SwipeCardAction.DELETE, SwipeCardAction.KEEP, SwipeCardAction.MOVE_TO_FOLDER, SwipeCardAction.POSTPONE),
     BROWSE_AND_DELETE("Browse, delete up", SwipeCardAction.NONE, SwipeCardAction.NONE, SwipeCardAction.DELETE, SwipeCardAction.POSTPONE),
+    ;
+
+    companion object {
+        /** Which preset (if any) the current four settings exactly match, so Settings can show
+         *  which one is active instead of leaving both options looking identically unselected. */
+        fun matching(settings: RoomieSettings): SwipeGesturePreset? = entries.find {
+            it.left == settings.swipeLeftAction &&
+                it.right == settings.swipeRightAction &&
+                it.up == settings.swipeUpAction &&
+                it.down == settings.swipeDownAction
+        }
+    }
 }

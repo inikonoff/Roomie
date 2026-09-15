@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -54,6 +55,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.roomie.app.data.media.MediaGroup
+import com.roomie.app.data.settings.CardAnimationStyle
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
@@ -118,6 +120,7 @@ fun SwipeScreen(
                     )
                     else -> CardStack(
                         stack = uiState.stack,
+                        animationStyle = uiState.cardAnimationStyle,
                         onSwiped = viewModel::swipe,
                     )
                 }
@@ -189,6 +192,7 @@ private fun fitSize(ratio: Float, maxWidth: Dp, maxHeight: Dp): Pair<Dp, Dp> {
 @Composable
 private fun CardStack(
     stack: List<MediaGroup>,
+    animationStyle: CardAnimationStyle,
     onSwiped: (SwipeDirection) -> Unit,
 ) {
     var exiting by remember { mutableStateOf<ExitingCardState?>(null) }
@@ -214,6 +218,7 @@ private fun CardStack(
                 group = top,
                 cardWidth = w,
                 cardHeight = h,
+                animationStyle = animationStyle,
                 onSwiped = { direction, releaseOffset ->
                     exiting = ExitingCardState(
                         group = top,
@@ -231,8 +236,44 @@ private fun CardStack(
                 state = ex,
                 cardWidth = w,
                 cardHeight = h,
+                animationStyle = animationStyle,
                 onFinished = { exiting = null },
             )
+        }
+    }
+}
+
+/**
+ * Applies the user's chosen swipe-card look for the current drag/fling [offset]: Classic rotates
+ * like a card pivoting on a table, Fade and Shrink both drop the rotation and instead ease out via
+ * opacity or size as the card travels toward (and past) the fling distance.
+ */
+private fun GraphicsLayerScope.applySwipeStyle(
+    style: CardAnimationStyle,
+    offset: Offset,
+    thresholdPx: Float,
+    baseScale: Float,
+) {
+    val travelled = (hypot(offset.x, offset.y) / FLING_DISTANCE).coerceIn(0f, 1f)
+    when (style) {
+        CardAnimationStyle.CLASSIC -> {
+            rotationZ = (offset.x / thresholdPx) * 12f
+            alpha = 1f
+            scaleX = baseScale
+            scaleY = baseScale
+        }
+        CardAnimationStyle.FADE -> {
+            rotationZ = 0f
+            alpha = 1f - travelled
+            scaleX = baseScale
+            scaleY = baseScale
+        }
+        CardAnimationStyle.SHRINK -> {
+            rotationZ = 0f
+            alpha = 1f
+            val shrink = 1f - travelled * 0.4f
+            scaleX = baseScale * shrink
+            scaleY = baseScale * shrink
         }
     }
 }
@@ -266,6 +307,7 @@ private fun ExitingCard(
     state: ExitingCardState,
     cardWidth: Dp,
     cardHeight: Dp,
+    animationStyle: CardAnimationStyle,
     onFinished: () -> Unit,
 ) {
     val offset = remember(state) { Animatable(state.startOffset, Offset.VectorConverter) }
@@ -283,7 +325,7 @@ private fun ExitingCard(
             .graphicsLayer {
                 translationX = offset.value.x
                 translationY = offset.value.y
-                rotationZ = (offset.value.x / thresholdPx) * 12f
+                applySwipeStyle(animationStyle, offset.value, thresholdPx, baseScale = 1f)
             },
     )
 }
@@ -293,6 +335,7 @@ private fun DraggableCard(
     group: MediaGroup,
     cardWidth: Dp,
     cardHeight: Dp,
+    animationStyle: CardAnimationStyle,
     onSwiped: (SwipeDirection, Offset) -> Unit,
 ) {
     val offset = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
@@ -312,12 +355,10 @@ private fun DraggableCard(
         modifier = Modifier
             .size(cardWidth, cardHeight)
             .graphicsLayer {
-                scaleX = scale.value
-                scaleY = scale.value
                 transformOrigin = zoomOrigin
                 translationX = offset.value.x + zoomPan.value.x
                 translationY = offset.value.y + zoomPan.value.y
-                rotationZ = (offset.value.x / thresholdPx) * 12f
+                applySwipeStyle(animationStyle, offset.value, thresholdPx, baseScale = scale.value)
             }
             .pointerInput(group.key) {
                 detectSwipeOrLongPressZoom(
@@ -369,7 +410,10 @@ private fun DraggableCard(
                     },
                     onZoomEnd = {
                         // A quick peek, not a decision: as soon as the finger lifts, the photo
-                        // snaps straight back to its normal size and position.
+                        // snaps straight back to its normal size and position. Reset the pivot
+                        // back to center now too — otherwise it would stay wherever the last
+                        // long-press happened and throw off this card's own swipe rotation later.
+                        zoomOrigin = TransformOrigin.Center
                         scope.launch { scale.animateTo(1f, ZOOM_SPRING) }
                         scope.launch { zoomPan.animateTo(Offset.Zero, ZOOM_PAN_SPRING) }
                     },
