@@ -246,6 +246,11 @@ private val ZOOM_SPRING = spring<Float>(
     stiffness = Spring.StiffnessMedium,
 )
 
+private val ZOOM_PAN_SPRING = spring<Offset>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = Spring.StiffnessMedium,
+)
+
 private const val FLING_DISTANCE = 1600f
 
 private fun flingTarget(direction: SwipeDirection, current: Offset): Offset = when (direction) {
@@ -362,7 +367,7 @@ private fun DraggableCard(
                         // A quick peek, not a decision: as soon as the finger lifts, the photo
                         // snaps straight back to its normal size and position.
                         scope.launch { scale.animateTo(1f, ZOOM_SPRING) }
-                        scope.launch { zoomPan.animateTo(Offset.Zero, ZOOM_SPRING) }
+                        scope.launch { zoomPan.animateTo(Offset.Zero, ZOOM_PAN_SPRING) }
                     },
                 )
             },
