@@ -1,6 +1,10 @@
 package com.roomie.app.ui.screens.trash
 
+import android.app.Activity
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,17 +21,24 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +63,27 @@ fun TrashFolderScreen(
 ) {
     val entries by viewModel.entries.collectAsState()
     val strings = LocalAppStrings.current
+    var showEmptyTrashConfirm by remember { mutableStateOf(false) }
+
+    // Same "wait for the real system result, not just launch() returning" pattern used for
+    // trash/move requests elsewhere — launch() only starts the confirmation activity, it doesn't
+    // mean the user has actually agreed to anything yet.
+    var pendingDelete by remember { mutableStateOf<TrashDeleteRequest?>(null) }
+    val deleteLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult(),
+    ) { result ->
+        val request = pendingDelete
+        pendingDelete = null
+        if (request != null && result.resultCode == Activity.RESULT_OK) {
+            viewModel.onDeleteConfirmed(request.entries)
+        }
+    }
+    LaunchedEffect(viewModel) {
+        viewModel.deleteConfirmationEvents.collect { request ->
+            pendingDelete = request
+            deleteLauncher.launch(IntentSenderRequest.Builder(request.intentSender).build())
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -60,6 +92,13 @@ fun TrashFolderScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = strings.back)
+                    }
+                },
+                actions = {
+                    if (entries.isNotEmpty()) {
+                        IconButton(onClick = { showEmptyTrashConfirm = true }) {
+                            Icon(Icons.Filled.DeleteForever, contentDescription = strings.emptyTrash)
+                        }
                     }
                 },
             )
@@ -78,15 +117,44 @@ fun TrashFolderScreen(
                 modifier = Modifier.padding(padding),
             ) {
                 items(entries, key = { it.stableId }) { entry ->
-                    TrashEntryTile(strings = strings, entry = entry, onRestore = { viewModel.restore(entry) })
+                    TrashEntryTile(
+                        strings = strings,
+                        entry = entry,
+                        onRestore = { viewModel.restore(entry) },
+                        onDeleteForever = { viewModel.requestDeleteForever(listOf(entry)) },
+                    )
                 }
             }
         }
     }
+
+    if (showEmptyTrashConfirm) {
+        AlertDialog(
+            onDismissRequest = { showEmptyTrashConfirm = false },
+            title = { Text(strings.emptyTrashConfirmTitle) },
+            text = { Text(strings.emptyTrashConfirmMessage(entries.size)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showEmptyTrashConfirm = false
+                        viewModel.requestDeleteForever(entries)
+                    },
+                ) { Text(strings.deleteForever) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEmptyTrashConfirm = false }) { Text(strings.cancel) }
+            },
+        )
+    }
 }
 
 @Composable
-private fun TrashEntryTile(strings: AppStrings, entry: TrashEntry, onRestore: () -> Unit) {
+private fun TrashEntryTile(
+    strings: AppStrings,
+    entry: TrashEntry,
+    onRestore: () -> Unit,
+    onDeleteForever: () -> Unit,
+) {
     Column {
         Box(
             modifier = Modifier
@@ -104,13 +172,24 @@ private fun TrashEntryTile(strings: AppStrings, entry: TrashEntry, onRestore: ()
             IconButton(
                 onClick = onRestore,
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
+                    .align(Alignment.TopStart)
                     .padding(4.dp)
                     .size(28.dp)
                     .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.55f)),
             ) {
                 Icon(Icons.Filled.Restore, contentDescription = strings.restore, tint = Color.White)
+            }
+            IconButton(
+                onClick = onDeleteForever,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f)),
+            ) {
+                Icon(Icons.Filled.DeleteForever, contentDescription = strings.deleteForever, tint = Color.White)
             }
             Box(
                 modifier = Modifier

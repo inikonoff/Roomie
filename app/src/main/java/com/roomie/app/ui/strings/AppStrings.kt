@@ -32,7 +32,23 @@ interface AppStrings {
     // Folder grid
     val nothingHere: String
 
+    // Swipe screen: video playback
+    val playVideo: String
+    val closeVideo: String
+
+    // Swipe screen: position counter, e.g. "12 of 345"
+    fun counterOfTotal(current: Int, total: Int): String
+
+    // Trash folder: permanent delete
+    val deleteForever: String
+    val emptyTrash: String
+    val emptyTrashConfirmTitle: String
+    fun emptyTrashConfirmMessage(count: Int): String
+
     // Settings screen
+    val sectionAppearance: String
+    val sectionCleanup: String
+    val sectionGestures: String
     val sectionTheme: String
     val themeLight: String
     val themeDark: String
@@ -53,6 +69,8 @@ interface AppStrings {
     val sectionSwipeGestures: String
     val presetClassic: String
     val presetBrowseDeleteUp: String
+    val presetClassicDescription: String
+    val presetBrowseDescription: String
     val swipeRight: String
     val swipeLeft: String
     val swipeUp: String
@@ -125,6 +143,20 @@ object EnglishStrings : AppStrings {
 
     override val nothingHere = "Nothing here."
 
+    override val playVideo = "Play video"
+    override val closeVideo = "Close video"
+
+    override fun counterOfTotal(current: Int, total: Int) = "$current of $total"
+
+    override val deleteForever = "Delete forever"
+    override val emptyTrash = "Empty trash"
+    override val emptyTrashConfirmTitle = "Empty trash?"
+    override fun emptyTrashConfirmMessage(count: Int) =
+        "This permanently deletes $count item${if (count == 1) "" else "s"}. This can't be undone."
+
+    override val sectionAppearance = "Appearance"
+    override val sectionCleanup = "Cleanup"
+    override val sectionGestures = "Gestures"
     override val sectionTheme = "Theme"
     override val themeLight = "Light"
     override val themeDark = "Dark"
@@ -144,7 +176,9 @@ object EnglishStrings : AppStrings {
     override val animationShrink = "Shrink"
     override val sectionSwipeGestures = "Swipe gestures"
     override val presetClassic = "Classic"
-    override val presetBrowseDeleteUp = "Browse, delete up"
+    override val presetBrowseDeleteUp = "Browse"
+    override val presetClassicDescription = "Right keeps, left deletes, up moves to folder, down postpones."
+    override val presetBrowseDescription = "Left/right just browse — nothing is changed. Up deletes, down postpones."
     override val swipeRight = "Swipe right"
     override val swipeLeft = "Swipe left"
     override val swipeUp = "Swipe up"
@@ -213,6 +247,20 @@ object RussianStrings : AppStrings {
 
     override val nothingHere = "Здесь пусто."
 
+    override val playVideo = "Воспроизвести видео"
+    override val closeVideo = "Закрыть видео"
+
+    override fun counterOfTotal(current: Int, total: Int) = "$current из $total"
+
+    override val deleteForever = "Удалить навсегда"
+    override val emptyTrash = "Очистить корзину"
+    override val emptyTrashConfirmTitle = "Очистить корзину?"
+    override fun emptyTrashConfirmMessage(count: Int) =
+        "Будет безвозвратно удалено объектов: $count. Это нельзя отменить."
+
+    override val sectionAppearance = "Оформление"
+    override val sectionCleanup = "Очистка"
+    override val sectionGestures = "Жесты"
     override val sectionTheme = "Тема"
     override val themeLight = "Светлая"
     override val themeDark = "Тёмная"
@@ -232,7 +280,11 @@ object RussianStrings : AppStrings {
     override val animationShrink = "Сжатие"
     override val sectionSwipeGestures = "Жесты свайпа"
     override val presetClassic = "Классика"
-    override val presetBrowseDeleteUp = "Обзор, вверх"
+    override val presetBrowseDeleteUp = "Обзор"
+    override val presetClassicDescription =
+        "Вправо — оставить, влево — удалить, вверх — переместить в папку, вниз — отложить."
+    override val presetBrowseDescription =
+        "Влево/вправо — просто просмотр, ничего не меняется. Вверх — удалить, вниз — отложить."
     override val swipeRight = "Свайп вправо"
     override val swipeLeft = "Свайп влево"
     override val swipeUp = "Свайп вверх"

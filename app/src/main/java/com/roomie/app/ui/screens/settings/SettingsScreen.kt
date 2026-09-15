@@ -1,14 +1,17 @@
 package com.roomie.app.ui.screens.settings
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -16,6 +19,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,6 +43,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.roomie.app.data.media.GalleryFolder
@@ -49,6 +56,9 @@ import com.roomie.app.data.settings.SwipeCardAction
 import com.roomie.app.data.settings.ThemeMode
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
+import com.roomie.app.ui.theme.ContainerShape
+import com.roomie.app.ui.theme.SwipeLeftDelete
+import com.roomie.app.ui.theme.SwipeRightKeep
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,38 +89,59 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
-            SectionTitle(strings.sectionTheme)
-            ThemeModeSelector(strings, settings.themeMode, viewModel::setThemeMode)
+            SettingsCard {
+                SectionTitle(strings.sectionAppearance)
 
-            SectionTitle(strings.sectionLanguage)
-            LanguageModeSelector(strings, settings.languageMode, viewModel::setLanguageMode)
+                SubsectionTitle(strings.sectionTheme)
+                ThemeModeSelector(strings, settings.themeMode, viewModel::setThemeMode)
 
-            SectionTitle(strings.sectionCardOrder)
-            SortOrderSelector(strings, settings.sortOrder, viewModel::setSortOrder)
+                SubsectionTitle(strings.sectionLanguage)
+                LanguageModeSelector(strings, settings.languageMode, viewModel::setLanguageMode)
 
-            SectionTitle(strings.sectionTrashRetention)
-            RetentionSelector(strings, settings.trashRetentionDays, viewModel::setTrashRetentionDays)
+                SubsectionTitle(strings.sectionCardAnimation)
+                CardAnimationStyleSelector(strings, settings.cardAnimationStyle, viewModel::setCardAnimationStyle)
+            }
 
-            SectionTitle(strings.sectionCardAnimation)
-            CardAnimationStyleSelector(strings, settings.cardAnimationStyle, viewModel::setCardAnimationStyle)
+            Spacer(modifier = Modifier.height(24.dp))
 
-            SectionTitle(strings.sectionSwipeGestures)
-            GesturePresetRow(
-                strings = strings,
-                selected = SwipeGesturePreset.matching(settings),
-                onPresetSelected = viewModel::applyGesturePreset,
-            )
-            SwipeActionRow(strings.swipeRight, strings, settings.swipeRightAction, viewModel::setSwipeRightAction)
-            SwipeActionRow(strings.swipeLeft, strings, settings.swipeLeftAction, viewModel::setSwipeLeftAction)
-            SwipeActionRow(strings.swipeUp, strings, settings.swipeUpAction, viewModel::setSwipeUpAction)
-            SwipeActionRow(strings.swipeDown, strings, settings.swipeDownAction, viewModel::setSwipeDownAction)
-            MoveToFolderRow(strings, settings.moveToFolderName, folders, viewModel::setMoveToFolder)
+            SettingsCard {
+                SectionTitle(strings.sectionCleanup)
 
-            SwitchRow(
-                title = strings.autoDeleteEmptyFolders,
-                checked = settings.autoDeleteEmptyFolders,
-                onCheckedChange = viewModel::setAutoDeleteEmptyFolders,
-            )
+                SubsectionTitle(strings.sectionCardOrder)
+                SortOrderSelector(strings, settings.sortOrder, viewModel::setSortOrder)
+
+                SubsectionTitle(strings.sectionTrashRetention)
+                RetentionSelector(strings, settings.trashRetentionDays, viewModel::setTrashRetentionDays)
+
+                SwitchRow(
+                    title = strings.autoDeleteEmptyFolders,
+                    checked = settings.autoDeleteEmptyFolders,
+                    onCheckedChange = viewModel::setAutoDeleteEmptyFolders,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            SettingsCard {
+                SectionTitle(strings.sectionGestures)
+
+                SubsectionTitle(strings.sectionSwipeGestures)
+                val preset = SwipeGesturePreset.matching(settings)
+                GesturePresetRow(
+                    strings = strings,
+                    selected = preset,
+                    onPresetSelected = viewModel::applyGesturePreset,
+                )
+                PresetDescription(strings, preset)
+
+                SwipeActionRow(strings.swipeRight, strings, settings.swipeRightAction, viewModel::setSwipeRightAction)
+                SwipeActionRow(strings.swipeLeft, strings, settings.swipeLeftAction, viewModel::setSwipeLeftAction)
+                SwipeActionRow(strings.swipeUp, strings, settings.swipeUpAction, viewModel::setSwipeUpAction)
+                SwipeActionRow(strings.swipeDown, strings, settings.swipeDownAction, viewModel::setSwipeDownAction)
+                MoveToFolderRow(strings, settings.moveToFolderName, folders, viewModel::setMoveToFolder)
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             SwitchRow(
                 title = strings.enableSwipeLimit,
@@ -119,6 +150,16 @@ fun SettingsScreen(
                 onCheckedChange = viewModel::setMonetizationEnabled,
             )
         }
+    }
+}
+
+@Composable
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        shape = ContainerShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(modifier = Modifier.padding(16.dp), content = content)
     }
 }
 
@@ -141,7 +182,17 @@ private fun SectionTitle(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+        modifier = Modifier.padding(bottom = 12.dp),
+    )
+}
+
+@Composable
+private fun SubsectionTitle(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.secondary,
+        modifier = Modifier.padding(top = 12.dp, bottom = 6.dp),
     )
 }
 
@@ -240,6 +291,15 @@ private fun SwipeCardAction.label(strings: AppStrings): String = when (this) {
     SwipeCardAction.NONE -> strings.actionNone
 }
 
+/** Delete/Keep get their swipe-card colors so the effect of each direction is visible at a
+ *  glance, without reading the text; every other action stays neutral. */
+@Composable
+private fun SwipeCardAction.valueColor(): Color = when (this) {
+    SwipeCardAction.DELETE -> SwipeLeftDelete
+    SwipeCardAction.KEEP -> SwipeRightKeep
+    else -> MaterialTheme.colorScheme.secondary
+}
+
 private fun CardAnimationStyle.label(strings: AppStrings): String = when (this) {
     CardAnimationStyle.CLASSIC -> strings.animationClassic
     CardAnimationStyle.FADE -> strings.animationFade
@@ -249,6 +309,23 @@ private fun CardAnimationStyle.label(strings: AppStrings): String = when (this) 
 private fun SwipeGesturePreset.label(strings: AppStrings): String = when (this) {
     SwipeGesturePreset.CLASSIC -> strings.presetClassic
     SwipeGesturePreset.BROWSE_AND_DELETE -> strings.presetBrowseDeleteUp
+}
+
+private fun SwipeGesturePreset?.description(strings: AppStrings): String? = when (this) {
+    SwipeGesturePreset.CLASSIC -> strings.presetClassicDescription
+    SwipeGesturePreset.BROWSE_AND_DELETE -> strings.presetBrowseDescription
+    null -> null
+}
+
+@Composable
+private fun PresetDescription(strings: AppStrings, preset: SwipeGesturePreset?) {
+    val description = preset.description(strings) ?: return
+    Text(
+        description,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.secondary,
+        modifier = Modifier.padding(bottom = 12.dp),
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -281,7 +358,7 @@ private fun GesturePresetRow(
     onPresetSelected: (SwipeGesturePreset) -> Unit,
 ) {
     val options = SwipeGesturePreset.entries
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
         options.forEachIndexed { index, preset ->
             SegmentedButton(
                 selected = selected == preset,
@@ -295,6 +372,43 @@ private fun GesturePresetRow(
     }
 }
 
+/** A label + value row (e.g. "Swipe right" -> "Delete") that must survive arbitrarily long
+ *  translations without wrapping character-by-character or overlapping the next row: giving both
+ *  texts an equal weight bounds each to its own half of the row's width, so `maxLines = 1` +
+ *  `TextOverflow.Ellipsis` actually has room to take effect. */
+@Composable
+private fun LabelValueRow(
+    label: String,
+    value: String,
+    valueColor: Color = MaterialTheme.colorScheme.secondary,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = valueColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
 @Composable
 private fun SwipeActionRow(
     label: String,
@@ -304,21 +418,12 @@ private fun SwipeActionRow(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = true }
-                .padding(vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(label, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                current.label(strings),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-        }
+        LabelValueRow(
+            label = label,
+            value = current.label(strings),
+            valueColor = current.valueColor(),
+            modifier = Modifier.clickable { expanded = true },
+        )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             SwipeCardAction.entries.forEach { action ->
                 DropdownMenuItem(
@@ -341,21 +446,11 @@ private fun MoveToFolderRow(
     onSelected: (GalleryFolder) -> Unit,
 ) {
     var showDialog by remember { mutableStateOf(false) }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { showDialog = true }
-            .padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(strings.moveToFolderDestination, style = MaterialTheme.typography.bodyLarge)
-        Text(
-            currentName ?: strings.notSet,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.secondary,
-        )
-    }
+    LabelValueRow(
+        label = strings.moveToFolderDestination,
+        value = currentName ?: strings.notSet,
+        modifier = Modifier.clickable { showDialog = true },
+    )
 
     if (showDialog) {
         AlertDialog(
@@ -369,6 +464,8 @@ private fun MoveToFolderRow(
                         items(folders, key = { it.bucketId }) { folder ->
                             Text(
                                 folder.displayName,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
@@ -396,7 +493,7 @@ private fun SwitchRow(
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {

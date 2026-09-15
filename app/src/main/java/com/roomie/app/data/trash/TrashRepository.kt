@@ -91,17 +91,42 @@ class TrashRepository(
 
     /** Runs on [com.roomie.app.work.TrashCleanupWorker]'s schedule. */
     suspend fun permanentlyDeleteExpired(): CleanupResult = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        val expired = trashDao.getExpired(now)
+        deleteEntries(trashDao.getExpired(System.currentTimeMillis()))
+    }
+
+    /**
+     * Manual "delete forever" from the Trash folder screen — lets the user free up space
+     * immediately instead of only ever waiting out the retention countdown. On API 30+, get a
+     * confirmation [IntentSender] via [buildDeleteRequest] first; deleting straight away here is
+     * only correct once that system dialog (if any) has already been confirmed.
+     */
+    suspend fun permanentlyDelete(entries: List<TrashEntry>): CleanupResult = withContext(Dispatchers.IO) {
+        deleteEntries(entries)
+    }
+
+    /**
+     * Returns the [IntentSender] for the single system confirmation dialog on API 30+
+     * ([MediaStore.createDeleteRequest]), or null on older versions where deleting just goes
+     * straight through [android.content.ContentResolver.delete] (and may throw
+     * [RecoverableSecurityException] per file, which [deleteEntries] treats as "skip, needs fresh
+     * consent" rather than trying to resolve it interactively).
+     */
+    fun buildDeleteRequest(entries: List<TrashEntry>): IntentSender? {
+        if (entries.isEmpty() || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        val uris = entries.map { Uri.parse(it.uri) }
+        return MediaStore.createDeleteRequest(resolver, uris).intentSender
+    }
+
+    private fun deleteEntries(entries: List<TrashEntry>): CleanupResult {
         var freedBytes = 0L
         val deletedIds = mutableListOf<String>()
         val affectedDirs = mutableSetOf<File>()
 
-        for (entry in expired) {
+        for (entry in entries) {
             val deleted = try {
                 resolver.delete(Uri.parse(entry.uri), null, null) > 0
             } catch (_: RecoverableSecurityException) {
-                // Needs a fresh user consent we can't show from a background worker; retry next run.
+                // Needs a fresh user consent we can't show here; caller can retry after that.
                 false
             } catch (_: SecurityException) {
                 false
@@ -116,7 +141,7 @@ class TrashRepository(
         if (deletedIds.isNotEmpty()) {
             trashDao.deleteByIds(deletedIds)
         }
-        CleanupResult(freedBytes, affectedDirs)
+        return CleanupResult(freedBytes, affectedDirs)
     }
 }
 

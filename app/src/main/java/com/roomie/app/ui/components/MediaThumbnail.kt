@@ -16,10 +16,20 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private const val VIDEO_THUMBNAIL_PX = 320
+
+/** Target size for a photo grid thumbnail. Requested explicitly instead of leaving Coil to infer
+ *  it from the composable's own layout constraints — under a `LazyVerticalGrid` cell wrapped in
+ *  several nested `Box`/`aspectRatio` modifiers, that inference isn't always reliable, and when it
+ *  falls back to the source's full resolution, the *view* (not Coil) ends up doing the downscale
+ *  on the GPU with simple bilinear filtering — which is what produces visible moiré/blockiness on
+ *  a busy photo shrunk that far down. Requesting a real target size makes Coil decode at that
+ *  resolution up front instead, which looks correct and uses far less memory per tile. */
+private const val GRID_THUMBNAIL_PX = 320
 
 /**
  * Process-wide cache for decoded video thumbnails. Every tile requests the same fixed
@@ -72,8 +82,12 @@ fun MediaThumbnail(
             }
         }
     } else {
+        val context = LocalContext.current
         AsyncImage(
-            model = uri,
+            model = ImageRequest.Builder(context)
+                .data(uri)
+                .size(GRID_THUMBNAIL_PX, GRID_THUMBNAIL_PX)
+                .build(),
             contentDescription = contentDescription,
             contentScale = contentScale,
             modifier = modifier,

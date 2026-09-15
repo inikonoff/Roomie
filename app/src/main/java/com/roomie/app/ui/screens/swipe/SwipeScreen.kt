@@ -4,6 +4,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -11,10 +13,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -41,6 +47,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.TransformOrigin
@@ -52,16 +60,27 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.data.settings.CardAnimationStyle
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
+import com.roomie.app.ui.theme.SwipeLeftDelete
+import com.roomie.app.ui.theme.SwipePostpone
+import com.roomie.app.ui.theme.SwipeRightKeep
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.hypot
+
+/** While a card sits "behind" the top one, it's rendered at reduced opacity — full-opacity would
+ *  otherwise show a hard, fully-formed duplicate photo peeking out around the top card whenever
+ *  the two have different aspect ratios (e.g. a portrait photo behind a landscape one). It fades
+ *  up to full opacity over [ENTRANCE_FADE_MS] once promoted to the top. */
+private const val BEHIND_CARD_ALPHA = 0.45f
+private const val ENTRANCE_FADE_MS = 200
 
 private const val SWIPE_THRESHOLD_DP = 120f
 private const val MAX_PEEK_ZOOM = 2.5f
@@ -109,10 +128,29 @@ fun SwipeScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            SwipeProgressBar(
-                current = uiState.sessionSwipeCount,
-                limit = uiState.freeSwipeLimit,
-            )
+            if (uiState.stack.isNotEmpty()) {
+                GamifiedProgressBar(
+                    deleted = uiState.deletedCount,
+                    kept = uiState.keptCount,
+                    postponed = uiState.postponedCount,
+                    total = uiState.totalCount,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                Text(
+                    strings.counterOfTotal(uiState.currentPosition, uiState.totalCount),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            if (uiState.monetizationEnabled) {
+                SwipeLimitIndicator(
+                    current = uiState.sessionSwipeCount,
+                    limit = uiState.freeSwipeLimit,
+                )
+            }
 
             Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                 when {
@@ -134,13 +172,74 @@ fun SwipeScreen(
     }
 }
 
+/** Small, secondary indicator for the free-swipe monetization cap — only shown when that cap is
+ *  actually in effect, so it's never confused with (or crowding out) the [GamifiedProgressBar]
+ *  above, which is what's actually interesting to look at while cleaning up a folder. */
 @Composable
-private fun SwipeProgressBar(current: Int, limit: Int) {
+private fun SwipeLimitIndicator(current: Int, limit: Int) {
     if (limit <= 0) return
     LinearProgressIndicator(
         progress = { (current.toFloat() / limit).coerceIn(0f, 1f) },
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
     )
+}
+
+/**
+ * Replaces a plain "swipes used" bar with something that actually reflects what's happening to
+ * this folder: two halves grow outward from a center line as you swipe — deleted to the left,
+ * kept (including moved/browsed-past) and postponed to the right — so at a glance you can see the
+ * split without reading any numbers.
+ */
+@Composable
+private fun GamifiedProgressBar(
+    deleted: Int,
+    kept: Int,
+    postponed: Int,
+    total: Int,
+    modifier: Modifier = Modifier,
+) {
+    if (total <= 0) return
+    val barHeight = 8.dp
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(barHeight)
+            .clip(RoundedCornerShape(barHeight / 2))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        val halfWidth = maxWidth / 2
+        val deletedWidth = halfWidth * (deleted.toFloat() / total).coerceIn(0f, 1f)
+        val keptWidth = halfWidth * (kept.toFloat() / total).coerceIn(0f, 1f)
+        val postponedWidth = halfWidth * (postponed.toFloat() / total).coerceIn(0f, 1f)
+
+        // Deleted: hugs the center line, growing to the left.
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = halfWidth - deletedWidth)
+                .width(deletedWidth)
+                .fillMaxHeight()
+                .background(SwipeLeftDelete),
+        )
+        // Kept: hugs the center line, growing to the right.
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = halfWidth)
+                .width(keptWidth)
+                .fillMaxHeight()
+                .background(SwipeRightKeep),
+        )
+        // Postponed: continues right after kept.
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = halfWidth + keptWidth)
+                .width(postponedWidth)
+                .fillMaxHeight()
+                .background(SwipePostpone),
+        )
+    }
 }
 
 @Composable
@@ -211,7 +310,7 @@ private fun CardStack(
             val (w, h) = fitSize(behind.cover.aspectRatio, maxWidth, maxHeight)
             SwipeCard(
                 group = behind,
-                modifier = Modifier.size(w, h),
+                modifier = Modifier.size(w, h).alpha(BEHIND_CARD_ALPHA),
             )
         }
 
@@ -256,24 +355,25 @@ private fun GraphicsLayerScope.applySwipeStyle(
     offset: Offset,
     thresholdPx: Float,
     baseScale: Float,
+    entranceAlpha: Float = 1f,
 ) {
     val travelled = (hypot(offset.x, offset.y) / FLING_DISTANCE).coerceIn(0f, 1f)
     when (style) {
         CardAnimationStyle.CLASSIC -> {
             rotationZ = (offset.x / thresholdPx) * 12f
-            alpha = 1f
+            alpha = entranceAlpha
             scaleX = baseScale
             scaleY = baseScale
         }
         CardAnimationStyle.FADE -> {
             rotationZ = 0f
-            alpha = 1f - travelled
+            alpha = (1f - travelled) * entranceAlpha
             scaleX = baseScale
             scaleY = baseScale
         }
         CardAnimationStyle.SHRINK -> {
             rotationZ = 0f
-            alpha = 1f
+            alpha = entranceAlpha
             val shrink = 1f - travelled * 0.4f
             scaleX = baseScale * shrink
             scaleY = baseScale * shrink
@@ -345,6 +445,10 @@ private fun DraggableCard(
     val scale = remember(group.key) { Animatable(1f) }
     val zoomPan = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
     var zoomOrigin by remember(group.key) { mutableStateOf(TransformOrigin.Center) }
+    // Every newly-promoted top card starts at BEHIND_CARD_ALPHA (matching how it was just
+    // rendered as the "behind" card) and eases up to fully opaque, instead of snapping instantly
+    // — that snap is what made a mismatched-aspect-ratio neighbor look like it was "sticking out".
+    val entranceAlpha = remember(group.key) { Animatable(BEHIND_CARD_ALPHA) }
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     var pastThreshold by remember(group.key) { mutableStateOf(false) }
@@ -352,6 +456,10 @@ private fun DraggableCard(
     val thresholdPx = with(density) { SWIPE_THRESHOLD_DP.dp.toPx() }
     val cardWidthPx = with(density) { cardWidth.toPx() }
     val cardHeightPx = with(density) { cardHeight.toPx() }
+
+    LaunchedEffect(group.key) {
+        entranceAlpha.animateTo(1f, tween(ENTRANCE_FADE_MS))
+    }
 
     SwipeCard(
         group = group,
@@ -361,7 +469,13 @@ private fun DraggableCard(
                 transformOrigin = zoomOrigin
                 translationX = offset.value.x + zoomPan.value.x
                 translationY = offset.value.y + zoomPan.value.y
-                applySwipeStyle(animationStyle, offset.value, thresholdPx, baseScale = scale.value)
+                applySwipeStyle(
+                    animationStyle,
+                    offset.value,
+                    thresholdPx,
+                    baseScale = scale.value,
+                    entranceAlpha = entranceAlpha.value,
+                )
             }
             .pointerInput(group.key) {
                 detectSwipeOrLongPressZoom(

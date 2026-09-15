@@ -41,8 +41,20 @@ data class SwipeUiState(
     val canUndo: Boolean = false,
     val isStackExhausted: Boolean = false,
     val cardAnimationStyle: CardAnimationStyle = CardAnimationStyle.CLASSIC,
+    /** Size of the whole folder this session started from (including anything already skipped
+     *  past via "start at this photo"), for the "12 of 345" position counter. */
+    val totalCount: Int = 0,
+    val deletedCount: Int = 0,
+    /** Left untouched, whether by an explicit Keep or a "do nothing" browse swipe — both leave the
+     *  file exactly as it was, so they share one bucket in the progress bar. */
+    val keptCount: Int = 0,
+    val postponedCount: Int = 0,
+    val monetizationEnabled: Boolean = false,
 ) {
     val currentGroup: MediaGroup? get() = stack.firstOrNull()
+
+    /** 1-based position of [currentGroup] within the original folder ordering. */
+    val currentPosition: Int get() = totalCount - stack.size + 1
 }
 
 data class SummaryUiState(val itemCount: Int, val freedBytes: Long)
@@ -98,6 +110,7 @@ class SwipeSessionViewModel(
                         freeSwipeLimit = settings.freeSwipeLimit,
                         hasReachedLimit = settings.hasReachedSwipeLimit,
                         cardAnimationStyle = settings.cardAnimationStyle,
+                        monetizationEnabled = settings.monetizationEnabled,
                     )
                 }
             }
@@ -124,7 +137,16 @@ class SwipeSessionViewModel(
                 ?: 0
             val stack = groups.drop(startIndex)
             _uiState.update {
-                it.copy(stack = stack, isLoading = false, canUndo = false, isStackExhausted = stack.isEmpty())
+                it.copy(
+                    stack = stack,
+                    isLoading = false,
+                    canUndo = false,
+                    isStackExhausted = stack.isEmpty(),
+                    totalCount = groups.size,
+                    deletedCount = 0,
+                    keptCount = 0,
+                    postponedCount = 0,
+                )
             }
         }
     }
@@ -170,7 +192,21 @@ class SwipeSessionViewModel(
             val rest = it.stack.drop(1)
             // Postponing keeps the card in this session's queue, just at the back of it.
             val newStack = if (action == SwipeCardAction.POSTPONE) rest + group else rest
-            it.copy(stack = newStack, canUndo = undoHistory.isNotEmpty(), isStackExhausted = newStack.isEmpty())
+            it.copy(
+                stack = newStack,
+                canUndo = undoHistory.isNotEmpty(),
+                isStackExhausted = newStack.isEmpty(),
+                deletedCount = it.deletedCount + if (action == SwipeCardAction.DELETE) 1 else 0,
+                keptCount = it.keptCount + if (action == SwipeCardAction.KEEP ||
+                    action == SwipeCardAction.NONE ||
+                    action == SwipeCardAction.MOVE_TO_FOLDER
+                ) {
+                    1
+                } else {
+                    0
+                },
+                postponedCount = it.postponedCount + if (action == SwipeCardAction.POSTPONE) 1 else 0,
+            )
         }
 
         viewModelScope.launch { settingsRepository.incrementSessionSwipeCount() }
@@ -195,6 +231,16 @@ class SwipeSessionViewModel(
                 stack = listOf(action.group) + withoutPostponedCopy,
                 canUndo = undoHistory.isNotEmpty(),
                 isStackExhausted = false,
+                deletedCount = it.deletedCount - if (action.action == SwipeCardAction.DELETE) 1 else 0,
+                keptCount = it.keptCount - if (action.action == SwipeCardAction.KEEP ||
+                    action.action == SwipeCardAction.NONE ||
+                    action.action == SwipeCardAction.MOVE_TO_FOLDER
+                ) {
+                    1
+                } else {
+                    0
+                },
+                postponedCount = it.postponedCount - if (action.action == SwipeCardAction.POSTPONE) 1 else 0,
             )
         }
     }
