@@ -30,7 +30,7 @@ class AppContainer(context: Context) {
     val settingsRepository = SettingsRepository(appContext).also {
         CrashReporter.mark(appContext, "AppContainer:after SettingsRepository")
     }
-    val trashRepository = TrashRepository(appContext, database.trashDao(), database.favoriteDao()).also {
+    val trashRepository = TrashRepository(appContext, database.trashDao()).also {
         CrashReporter.mark(appContext, "AppContainer:after TrashRepository")
     }
     val emptyFolderCleaner = EmptyFolderCleaner()

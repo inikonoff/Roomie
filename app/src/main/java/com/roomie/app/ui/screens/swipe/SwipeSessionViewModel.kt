@@ -4,14 +4,16 @@ import android.content.IntentSender
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.roomie.app.data.media.MediaGroup
-import com.roomie.app.data.media.MediaItem
 import com.roomie.app.data.media.MediaRepository
 import com.roomie.app.data.media.PeriodFilter
 import com.roomie.app.data.monetization.MonetizationGateway
 import com.roomie.app.data.monetization.PurchaseResult
 import com.roomie.app.data.monetization.RewardResult
+import com.roomie.app.data.settings.RoomieSettings
 import com.roomie.app.data.settings.SettingsRepository
+import com.roomie.app.data.settings.SwipeCardAction
 import com.roomie.app.data.trash.TrashRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -22,11 +24,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class SwipeDirection { LEFT, RIGHT }
+enum class SwipeDirection { LEFT, RIGHT, UP, DOWN }
 
 private const val MAX_UNDO_HISTORY = 10
 
-private data class SwipeAction(val group: MediaGroup, val direction: SwipeDirection)
+private data class SwipeAction(val group: MediaGroup, val action: SwipeCardAction)
 
 data class SwipeUiState(
     val folderName: String = "",
@@ -36,7 +38,6 @@ data class SwipeUiState(
     val freeSwipeLimit: Int = 100,
     val hasReachedLimit: Boolean = false,
     val canUndo: Boolean = false,
-    val favoritedKeys: Set<String> = emptySet(),
     val isStackExhausted: Boolean = false,
 ) {
     val currentGroup: MediaGroup? get() = stack.firstOrNull()
@@ -45,6 +46,8 @@ data class SwipeUiState(
 data class SummaryUiState(val itemCount: Int, val freedBytes: Long)
 
 data class TrashConfirmationRequest(val intentSender: IntentSender, val groups: List<MediaGroup>)
+
+data class MoveConfirmationRequest(val intentSender: IntentSender, val group: MediaGroup, val targetRelativePath: String)
 
 class SwipeSessionViewModel(
     private val mediaRepository: MediaRepository,
@@ -62,15 +65,26 @@ class SwipeSessionViewModel(
     private val _trashConfirmationEvents = MutableSharedFlow<TrashConfirmationRequest>()
     val trashConfirmationEvents: SharedFlow<TrashConfirmationRequest> = _trashConfirmationEvents
 
+    private val _moveConfirmationEvents = MutableSharedFlow<MoveConfirmationRequest>()
+    val moveConfirmationEvents: SharedFlow<MoveConfirmationRequest> = _moveConfirmationEvents
+
     /** Items swiped left this session, awaiting review on the trash-preview screen. */
     private val _pendingTrash = MutableStateFlow<List<MediaGroup>>(emptyList())
     val pendingTrash: StateFlow<List<MediaGroup>> = _pendingTrash.asStateFlow()
 
     private val undoHistory = ArrayDeque<SwipeAction>(MAX_UNDO_HISTORY)
 
+    /** Jobs performing an in-flight "move to folder", keyed by group, so undo can cancel one that
+     *  hasn't applied yet. A move that already completed can't be reversed by undo (accepted MVP
+     *  limitation — see requestMove). */
+    private val pendingMoveJobs = mutableMapOf<String, Job>()
+
+    private var currentSettings: RoomieSettings = RoomieSettings()
+
     init {
         viewModelScope.launch {
             settingsRepository.settings.collectLatest { settings ->
+                currentSettings = settings
                 _uiState.update {
                     it.copy(
                         sessionSwipeCount = settings.sessionSwipeCount,
@@ -87,6 +101,7 @@ class SwipeSessionViewModel(
             _uiState.update { it.copy(isLoading = true, folderName = displayName, isStackExhausted = false) }
             _pendingTrash.value = emptyList()
             undoHistory.clear()
+            pendingMoveJobs.clear()
             val sortOrder = settingsRepository.settings.first().sortOrder
             val groups = mediaRepository.getMediaGroups(bucketId, period, sortOrder)
             _uiState.update {
@@ -95,18 +110,31 @@ class SwipeSessionViewModel(
         }
     }
 
+    private fun actionFor(direction: SwipeDirection): SwipeCardAction = when (direction) {
+        SwipeDirection.LEFT -> currentSettings.swipeLeftAction
+        SwipeDirection.RIGHT -> currentSettings.swipeRightAction
+        SwipeDirection.UP -> currentSettings.swipeUpAction
+        SwipeDirection.DOWN -> currentSettings.swipeDownAction
+    }
+
     fun swipe(direction: SwipeDirection) {
         val state = _uiState.value
         val group = state.currentGroup ?: return
         if (state.hasReachedLimit) return
 
-        if (direction == SwipeDirection.LEFT) {
-            _pendingTrash.update { it + group }
+        val action = actionFor(direction)
+        when (action) {
+            SwipeCardAction.DELETE -> _pendingTrash.update { it + group }
+            SwipeCardAction.MOVE_TO_FOLDER -> requestMove(group)
+            SwipeCardAction.KEEP, SwipeCardAction.NONE, SwipeCardAction.POSTPONE -> Unit
         }
-        pushUndo(SwipeAction(group, direction))
+
+        pushUndo(SwipeAction(group, action))
 
         _uiState.update {
-            val newStack = it.stack.drop(1)
+            val rest = it.stack.drop(1)
+            // Postponing keeps the card in this session's queue, just at the back of it.
+            val newStack = if (action == SwipeCardAction.POSTPONE) rest + group else rest
             it.copy(stack = newStack, canUndo = undoHistory.isNotEmpty(), isStackExhausted = newStack.isEmpty())
         }
 
@@ -115,26 +143,50 @@ class SwipeSessionViewModel(
 
     fun undo() {
         val action = undoHistory.removeLastOrNull() ?: return
-        if (action.direction == SwipeDirection.LEFT) {
-            _pendingTrash.update { it - action.group }
+        when (action.action) {
+            SwipeCardAction.DELETE -> _pendingTrash.update { it - action.group }
+            SwipeCardAction.MOVE_TO_FOLDER -> pendingMoveJobs.remove(action.group.key)?.cancel()
+            SwipeCardAction.KEEP, SwipeCardAction.NONE, SwipeCardAction.POSTPONE -> Unit
         }
         _uiState.update {
+            // A postponed card is already somewhere in the stack (at the back); drop that copy
+            // before reinserting it at the front so undo doesn't leave it in the queue twice.
+            val withoutPostponedCopy = if (action.action == SwipeCardAction.POSTPONE) {
+                it.stack.filterNot { group -> group.key == action.group.key }
+            } else {
+                it.stack
+            }
             it.copy(
-                stack = listOf(action.group) + it.stack,
+                stack = listOf(action.group) + withoutPostponedCopy,
                 canUndo = undoHistory.isNotEmpty(),
                 isStackExhausted = false,
             )
         }
     }
 
-    fun toggleFavorite(item: MediaItem) {
-        val newValue = item.stableId !in _uiState.value.favoritedKeys
-        _uiState.update {
-            it.copy(
-                favoritedKeys = if (newValue) it.favoritedKeys + item.stableId else it.favoritedKeys - item.stableId,
-            )
+    /**
+     * Requests the "move to folder" write access (API 30+ needs one system dialog per group, like
+     * the trash flow) and applies it once granted. Runs in its own tracked [Job] so [undo] can
+     * cancel it if the user changes their mind before it lands.
+     */
+    private fun requestMove(group: MediaGroup) {
+        val job = viewModelScope.launch {
+            val bucketId = currentSettings.moveToFolderBucketId ?: return@launch
+            val targetPath = mediaRepository.getRelativePathForBucket(bucketId) ?: return@launch
+            val intentSender = mediaRepository.buildMoveRequest(group.allUris)
+            if (intentSender != null) {
+                _moveConfirmationEvents.emit(MoveConfirmationRequest(intentSender, group, targetPath))
+            } else {
+                mediaRepository.applyMove(group.allUris, targetPath)
+            }
         }
-        viewModelScope.launch { trashRepository.setFavoriteLocally(item, newValue) }
+        pendingMoveJobs[group.key] = job
+        job.invokeOnCompletion { pendingMoveJobs.remove(group.key, job) }
+    }
+
+    /** Called once the system write-access dialog (if any) has been confirmed. */
+    fun onMoveConfirmed(request: MoveConfirmationRequest) {
+        viewModelScope.launch { mediaRepository.applyMove(request.group.allUris, request.targetRelativePath) }
     }
 
     /** Trash-preview screen: exclude an item the user un-checked (it will be kept, not deleted). */
@@ -161,7 +213,6 @@ class SwipeSessionViewModel(
     private suspend fun completeTrashing(groups: List<MediaGroup>) {
         val retentionDays = settingsRepository.settings.first().trashRetentionDays
         trashRepository.recordTrashed(groups, retentionDays)
-        trashRepository.syncFavoritesToMediaStore()
         _summaryState.value = SummaryUiState(
             itemCount = groups.sumOf { it.items.size },
             freedBytes = groups.sumOf { it.totalSizeBytes },

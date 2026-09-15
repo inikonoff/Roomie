@@ -5,7 +5,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -18,13 +17,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -112,9 +110,7 @@ fun SwipeScreen(
                     )
                     else -> CardStack(
                         stack = uiState.stack,
-                        favoritedKeys = uiState.favoritedKeys,
                         onSwiped = viewModel::swipe,
-                        onDoubleTap = { viewModel.toggleFavorite(it.cover) },
                     )
                 }
             }
@@ -139,17 +135,30 @@ private fun BottomActionBar(canUndo: Boolean, onUndo: () -> Unit) {
         modifier = Modifier.fillMaxWidth().padding(16.dp),
         horizontalArrangement = Arrangement.Center,
     ) {
-        FloatingActionButton(onClick = { if (canUndo) onUndo() }) {
-            Icon(
-                Icons.Filled.Replay,
-                contentDescription = "Undo",
-                tint = if (canUndo) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                },
-            )
-        }
+        ExtendedFloatingActionButton(
+            onClick = { if (canUndo) onUndo() },
+            icon = {
+                Icon(
+                    Icons.Filled.Undo,
+                    contentDescription = null,
+                    tint = if (canUndo) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    },
+                )
+            },
+            text = {
+                Text(
+                    "Undo",
+                    color = if (canUndo) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    },
+                )
+            },
+        )
     }
 }
 
@@ -157,7 +166,6 @@ private fun BottomActionBar(canUndo: Boolean, onUndo: () -> Unit) {
  *  promoted top card underneath is interactive immediately instead of waiting for this to finish. */
 private data class ExitingCardState(
     val group: MediaGroup,
-    val isFavorited: Boolean,
     val startOffset: Offset,
     val direction: SwipeDirection,
 )
@@ -173,9 +181,7 @@ private fun fitSize(ratio: Float, maxWidth: Dp, maxHeight: Dp): Pair<Dp, Dp> {
 @Composable
 private fun CardStack(
     stack: List<MediaGroup>,
-    favoritedKeys: Set<String>,
     onSwiped: (SwipeDirection) -> Unit,
-    onDoubleTap: (MediaGroup) -> Unit,
 ) {
     var exiting by remember { mutableStateOf<ExitingCardState?>(null) }
 
@@ -187,7 +193,6 @@ private fun CardStack(
             val (w, h) = fitSize(behind.cover.aspectRatio, maxWidth, maxHeight)
             SwipeCard(
                 group = behind,
-                isFavorited = behind.cover.stableId in favoritedKeys,
                 modifier = Modifier
                     .size(w, h)
                     .graphicsLayer { scaleX = 0.94f; scaleY = 0.94f; alpha = 0.6f },
@@ -198,19 +203,16 @@ private fun CardStack(
             val (w, h) = fitSize(top.cover.aspectRatio, maxWidth, maxHeight)
             DraggableCard(
                 group = top,
-                isFavorited = top.cover.stableId in favoritedKeys,
                 cardWidth = w,
                 cardHeight = h,
                 onSwiped = { direction, releaseOffset ->
                     exiting = ExitingCardState(
                         group = top,
-                        isFavorited = top.cover.stableId in favoritedKeys,
                         startOffset = releaseOffset,
                         direction = direction,
                     )
                     onSwiped(direction)
                 },
-                onDoubleTap = { onDoubleTap(top) },
             )
         }
 
@@ -231,6 +233,15 @@ private val SWIPE_SPRING = spring<Offset>(
     stiffness = Spring.StiffnessLow,
 )
 
+private const val FLING_DISTANCE = 1600f
+
+private fun flingTarget(direction: SwipeDirection, current: Offset): Offset = when (direction) {
+    SwipeDirection.RIGHT -> Offset(FLING_DISTANCE, current.y)
+    SwipeDirection.LEFT -> Offset(-FLING_DISTANCE, current.y)
+    SwipeDirection.DOWN -> Offset(current.x, FLING_DISTANCE)
+    SwipeDirection.UP -> Offset(current.x, -FLING_DISTANCE)
+}
+
 @Composable
 private fun ExitingCard(
     state: ExitingCardState,
@@ -242,19 +253,17 @@ private fun ExitingCard(
     val thresholdPx = with(LocalDensity.current) { SWIPE_THRESHOLD_DP.dp.toPx() }
 
     LaunchedEffect(state) {
-        val flingX = if (state.direction == SwipeDirection.RIGHT) 1600f else -1600f
-        offset.animateTo(Offset(flingX, state.startOffset.y), SWIPE_SPRING)
+        offset.animateTo(flingTarget(state.direction, state.startOffset), SWIPE_SPRING)
         onFinished()
     }
 
     SwipeCard(
         group = state.group,
-        isFavorited = state.isFavorited,
         modifier = Modifier
             .size(cardWidth, cardHeight)
             .graphicsLayer {
                 translationX = offset.value.x
-                translationY = offset.value.y * 0.2f
+                translationY = offset.value.y
                 rotationZ = (offset.value.x / thresholdPx) * 12f
             },
     )
@@ -263,11 +272,9 @@ private fun ExitingCard(
 @Composable
 private fun DraggableCard(
     group: MediaGroup,
-    isFavorited: Boolean,
     cardWidth: Dp,
     cardHeight: Dp,
     onSwiped: (SwipeDirection, Offset) -> Unit,
-    onDoubleTap: () -> Unit,
 ) {
     val offset = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
     val scope = rememberCoroutineScope()
@@ -277,12 +284,11 @@ private fun DraggableCard(
 
     SwipeCard(
         group = group,
-        isFavorited = isFavorited,
         modifier = Modifier
             .size(cardWidth, cardHeight)
             .graphicsLayer {
                 translationX = offset.value.x
-                translationY = offset.value.y * 0.2f
+                translationY = offset.value.y
                 rotationZ = (offset.value.x / thresholdPx) * 12f
             }
             .pointerInput(group.key) {
@@ -291,7 +297,7 @@ private fun DraggableCard(
                         change.consume()
                         val newValue = offset.value + dragAmount
                         scope.launch { offset.snapTo(newValue) }
-                        val crossed = abs(newValue.x) > thresholdPx
+                        val crossed = abs(newValue.x) > thresholdPx || abs(newValue.y) > thresholdPx
                         if (crossed != pastThreshold) {
                             pastThreshold = crossed
                             if (crossed) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -299,20 +305,24 @@ private fun DraggableCard(
                     },
                     onDragEnd = {
                         val current = offset.value
-                        if (abs(current.x) > thresholdPx) {
+                        val horizontalCrossed = abs(current.x) > thresholdPx
+                        val verticalCrossed = abs(current.y) > thresholdPx
+                        val direction = when {
+                            horizontalCrossed && abs(current.x) >= abs(current.y) ->
+                                if (current.x > 0) SwipeDirection.RIGHT else SwipeDirection.LEFT
+                            verticalCrossed -> if (current.y > 0) SwipeDirection.DOWN else SwipeDirection.UP
+                            else -> null
+                        }
+                        if (direction != null) {
                             // Hand off to the caller immediately — advancing to the next card
                             // doesn't wait on this card's own fly-out animation, which continues
                             // independently as an overlay (see ExitingCard).
-                            val direction = if (current.x > 0) SwipeDirection.RIGHT else SwipeDirection.LEFT
                             onSwiped(direction, current)
                         } else {
                             scope.launch { offset.animateTo(Offset.Zero, SWIPE_SPRING) }
                         }
                     },
                 )
-            }
-            .pointerInput(group.key) {
-                detectTapGestures(onDoubleTap = { onDoubleTap() })
             },
     )
 }

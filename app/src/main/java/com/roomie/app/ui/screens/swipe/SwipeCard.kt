@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -29,7 +28,6 @@ import java.util.concurrent.TimeUnit
 @Composable
 fun SwipeCard(
     group: MediaGroup,
-    isFavorited: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -65,17 +63,6 @@ fun SwipeCard(
             CardBadge(
                 text = formatDuration(group.cover.durationMillis),
                 modifier = Modifier.align(Alignment.BottomStart),
-            )
-        }
-
-        if (isFavorited) {
-            Icon(
-                Icons.Filled.Favorite,
-                contentDescription = "Favorited",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(12.dp),
             )
         }
     }

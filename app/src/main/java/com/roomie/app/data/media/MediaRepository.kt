@@ -1,7 +1,9 @@
 package com.roomie.app.data.media
 
 import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
+import android.content.IntentSender
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
@@ -52,6 +54,55 @@ class MediaRepository(private val context: Context) {
         if (sortOrder == SortOrder.NEWEST_FIRST) groups.asReversed() else groups
     }
 
+    /**
+     * The `RELATIVE_PATH` of a representative item already in [bucketId], used as the "move to
+     * folder" destination — MediaStore buckets don't otherwise expose a writable path. Requires
+     * API 29+ (the column doesn't exist below Q); returns null below that or if the bucket is empty.
+     */
+    suspend fun getRelativePathForBucket(bucketId: Long): String? = withContext(Dispatchers.IO) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return@withContext null
+        queryRelativePath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, MediaStore.Images.Media.BUCKET_ID, bucketId)
+            ?: queryRelativePath(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, MediaStore.Video.Media.BUCKET_ID, bucketId)
+    }
+
+    private fun queryRelativePath(collection: Uri, bucketColumn: String, bucketId: Long): String? {
+        val projection = arrayOf(MediaStore.MediaColumns.RELATIVE_PATH)
+        resolver.query(collection, projection, "$bucketColumn = ?", arrayOf(bucketId.toString()), null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                return cursor.getStringOrEmpty(MediaStore.MediaColumns.RELATIVE_PATH).ifBlank { null }
+            }
+        }
+        return null
+    }
+
+    /**
+     * The [IntentSender] for the single system consent dialog needed to modify media Roomie
+     * doesn't own (API 30+), mirroring [com.roomie.app.data.trash.TrashRepository]'s trash-request
+     * flow. Returns null on older versions (nothing to confirm — the update can be attempted
+     * directly) or if [uris] is empty.
+     */
+    fun buildMoveRequest(uris: List<Uri>): IntentSender? {
+        if (uris.isEmpty() || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        return try {
+            MediaStore.createWriteRequest(resolver, uris).intentSender
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Moves [uris] into [targetRelativePath] by updating their MediaStore row; best-effort. */
+    suspend fun applyMove(uris: List<Uri>, targetRelativePath: String) = withContext(Dispatchers.IO) {
+        val values = ContentValues().apply { put(MediaStore.MediaColumns.RELATIVE_PATH, targetRelativePath) }
+        uris.forEach { uri ->
+            try {
+                resolver.update(uri, values, null, null)
+            } catch (_: Exception) {
+                // Best-effort: a denied write request or a race with the file being deleted elsewhere
+                // just leaves that one item where it was.
+            }
+        }
+    }
+
     private fun queryImages(bucketId: Long?, period: PeriodFilter): List<MediaItem> {
         val projection = buildList {
             add(MediaStore.Images.Media._ID)
@@ -65,9 +116,6 @@ class MediaRepository(private val context: Context) {
             add(MediaStore.Images.Media.HEIGHT)
             @Suppress("DEPRECATION")
             add(MediaStore.Images.Media.DATA)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                add(MediaStore.Images.Media.IS_FAVORITE)
-            }
         }.toTypedArray()
 
         val (selection, args) = buildSelection(bucketId, period, MediaStore.Images.Media.BUCKET_ID)
@@ -86,11 +134,6 @@ class MediaRepository(private val context: Context) {
                 ),
                 sizeBytes = cursor.getLong(MediaStore.Images.Media.SIZE),
                 isVideo = false,
-                isFavorite = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    cursor.getInt(MediaStore.Images.Media.IS_FAVORITE) == 1
-                } else {
-                    false
-                },
                 filePath = cursor.getStringOrEmpty(MediaStore.Images.Media.DATA).ifBlank { null },
                 width = cursor.getInt(MediaStore.Images.Media.WIDTH),
                 height = cursor.getInt(MediaStore.Images.Media.HEIGHT),
@@ -112,9 +155,6 @@ class MediaRepository(private val context: Context) {
             add(MediaStore.Video.Media.HEIGHT)
             @Suppress("DEPRECATION")
             add(MediaStore.Video.Media.DATA)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                add(MediaStore.Video.Media.IS_FAVORITE)
-            }
         }.toTypedArray()
 
         val (selection, args) = buildSelection(bucketId, period, MediaStore.Video.Media.BUCKET_ID)
@@ -134,11 +174,6 @@ class MediaRepository(private val context: Context) {
                 sizeBytes = cursor.getLong(MediaStore.Video.Media.SIZE),
                 isVideo = true,
                 durationMillis = cursor.getLong(MediaStore.Video.Media.DURATION),
-                isFavorite = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    cursor.getInt(MediaStore.Video.Media.IS_FAVORITE) == 1
-                } else {
-                    false
-                },
                 filePath = cursor.getStringOrEmpty(MediaStore.Video.Media.DATA).ifBlank { null },
                 width = cursor.getInt(MediaStore.Video.Media.WIDTH),
                 height = cursor.getInt(MediaStore.Video.Media.HEIGHT),

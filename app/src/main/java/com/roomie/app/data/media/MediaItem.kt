@@ -15,7 +15,6 @@ data class MediaItem(
     val sizeBytes: Long,
     val isVideo: Boolean,
     val durationMillis: Long = 0L,
-    val isFavorite: Boolean = false,
     /** Absolute path, when readable (needs All Files Access on API 29+); used only for the
      *  optional empty-folder cleanup, never for reading/writing the file itself. */
     val filePath: String? = null,

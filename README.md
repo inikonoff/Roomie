@@ -22,13 +22,13 @@ roomie/
   app/src/main/java/com/roomie/app/
     data/
       media/       MediaStore access (MediaRepository), burst/video grouping, empty-folder cleanup
-      db/          Room: trash registry + favorites (pre-Q fallback / batched sync queue)
-      settings/    DataStore-backed user settings + session swipe counter
-      trash/       TrashRepository: system trash dialog, retention countdown, favorite sync
+      db/          Room: trash registry only
+      settings/    DataStore-backed user settings, per-direction swipe actions, session swipe counter
+      trash/       TrashRepository: system trash dialog, retention countdown
       monetization/ MonetizationGateway interface (no-op stub; extension point for Ads/Billing)
     ui/
       screens/folders   Auto-discovered folder grid + period filter
-      screens/swipe      The card stack: drag gesture, spring physics, undo, favorites, limit
+      screens/swipe      The card stack: 4-direction drag gesture, spring physics, undo, limit
       screens/trash      Pre-deletion review grid ("uncheck to keep")
       screens/summary    Post-deletion summary (count + freed space)
       screens/limit      Swipe-limit paywall (ad / one-time purchase stubs)
@@ -49,10 +49,12 @@ roomie/
   own worker permanently deletes it once *its* countdown elapses. On API 26-29 (no system trash),
   the file stays visible until that same countdown fires — an accepted MVP simplification for
   legacy Android, called out in the TZ (section 8.2).
-- **Favorites are batched, not synced instantly**, mirroring the "one system dialog per session"
-  rule for deletions: double-tapping during a swipe session writes to a local Room table only;
-  everything pending gets pushed to the real `MediaStore.IS_FAVORITE` column in one pass when the
-  session is finalized (Q+ only — that column doesn't exist below Android 10).
+- **Each swipe direction maps to a configurable action** (`SwipeCardAction`: delete / keep / move
+  to folder / postpone / do nothing), set per-direction in Settings — defaults are right=keep,
+  left=delete, up=move to a single pre-chosen folder, down=postpone to the back of this session's
+  queue. "Move to folder" reuses the trash flow's "one system dialog" pattern
+  (`MediaStore.createWriteRequest`, API 30+) to get write access, then updates the file's
+  `RELATIVE_PATH`; below API 29 (no `RELATIVE_PATH` column) it's a no-op.
 - **Burst grouping is timestamp-based**, not `burst_id`-based, because there is no public,
   cross-device MediaStore column exposing a burst id to third-party apps. Consecutive photos in the
   same folder taken within ~1.5s of each other collapse into one card; short videos are always their
@@ -77,18 +79,24 @@ Once this builds in a real environment, exercise at minimum:
 
 1. Grant/deny the media permission dialog on first launch; deny → rationale screen → grant.
 2. Open a folder with bursts (rapid continuous shots) and confirm they collapse into one card.
-3. Swipe left/right, confirm rotation + spring-back/spring-out animation and haptic tick at the
-   threshold; double-tap a card and confirm the favorite badge appears.
-4. Undo several times in a row (up to 10) and confirm cards return in the correct order.
-5. Exhaust a folder's stack, review the trash grid, uncheck an item, then "Delete all" — confirm
+3. Swipe in all four directions, confirm rotation + spring-back/spring-out animation and haptic
+   tick at the threshold, and that the next card is swipeable immediately (no waiting for the
+   previous card's exit animation).
+4. Undo several times in a row (up to 10) and confirm cards return to the front correctly,
+   including undoing a postponed card and a move-to-folder swipe.
+5. In Settings, reassign a direction's action (e.g. swap left/right) and a "move to folder"
+   destination, then confirm the swipe screen picks up the new mapping.
+6. Exhaust a folder's stack, review the trash grid, uncheck an item, then "Delete all" — confirm
    exactly one system trash dialog appears (API 30+) and the summary screen shows correct
-   count/size.
-6. In Settings, flip "Enable swipe limit" on, set a low value in code temporarily (or swipe ~100
+   count/size. Also open the trash preview mid-session via the top-bar icon.
+7. Swipe a card in the "move to folder" direction and confirm the system write-access dialog
+   appears once (API 30+) and the file ends up in the configured folder.
+8. In Settings, flip "Enable swipe limit" on, set a low value in code temporarily (or swipe ~100
    times) to confirm the limit screen appears and both stub buttons report "not available" cleanly.
-7. Change sort order and retention days in Settings and confirm they take effect on the next
+9. Change sort order and retention days in Settings and confirm they take effect on the next
    session / cleanup run.
-8. Turn off networking entirely and confirm nothing breaks (there should be no network calls at
-   all outside a real Ads SDK, which isn't wired in).
+10. Turn off networking entirely and confirm nothing breaks (there should be no network calls at
+    all outside a real Ads SDK, which isn't wired in).
 
 ## Known gaps vs. a production build
 

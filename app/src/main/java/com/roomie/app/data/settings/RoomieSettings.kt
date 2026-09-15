@@ -10,6 +10,13 @@ data class RoomieSettings(
     val monetizationEnabled: Boolean = false,
     val freeSwipeLimit: Int = 100,
     val isPremiumUnlocked: Boolean = false,
+    val swipeLeftAction: SwipeCardAction = SwipeCardAction.DELETE,
+    val swipeRightAction: SwipeCardAction = SwipeCardAction.KEEP,
+    val swipeUpAction: SwipeCardAction = SwipeCardAction.MOVE_TO_FOLDER,
+    val swipeDownAction: SwipeCardAction = SwipeCardAction.POSTPONE,
+    /** Destination for [SwipeCardAction.MOVE_TO_FOLDER]; null until the user picks one in Settings. */
+    val moveToFolderBucketId: Long? = null,
+    val moveToFolderName: String? = null,
 ) {
     val hasReachedSwipeLimit: Boolean
         get() = monetizationEnabled && !isPremiumUnlocked && sessionSwipeCount >= freeSwipeLimit

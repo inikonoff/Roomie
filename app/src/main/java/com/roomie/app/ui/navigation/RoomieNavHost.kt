@@ -67,6 +67,19 @@ fun RoomieNavHost(viewModelFactory: ViewModelFactory) {
         }
     }
 
+    // Same "one dialog, then proceed regardless of result" pattern as trashing, for the write
+    // access needed to move a swiped-up card into the configured target folder.
+    val moveIntentSenderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult(),
+    ) { }
+
+    LaunchedEffect(swipeSessionViewModel) {
+        swipeSessionViewModel.moveConfirmationEvents.collect { request ->
+            moveIntentSenderLauncher.launch(IntentSenderRequest.Builder(request.intentSender).build())
+            swipeSessionViewModel.onMoveConfirmed(request)
+        }
+    }
+
     NavHost(navController = navController, startDestination = Routes.FOLDERS) {
         composable(Routes.FOLDERS) {
             val folderListViewModel: FolderListViewModel = viewModel(factory = viewModelFactory)

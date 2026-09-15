@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.roomie.app.data.media.SortOrder
@@ -26,6 +27,12 @@ class SettingsRepository(private val context: Context) {
         val MONETIZATION_ENABLED = booleanPreferencesKey("monetization_enabled")
         val FREE_SWIPE_LIMIT = intPreferencesKey("free_swipe_limit")
         val IS_PREMIUM_UNLOCKED = booleanPreferencesKey("is_premium_unlocked")
+        val SWIPE_LEFT_ACTION = stringPreferencesKey("swipe_left_action")
+        val SWIPE_RIGHT_ACTION = stringPreferencesKey("swipe_right_action")
+        val SWIPE_UP_ACTION = stringPreferencesKey("swipe_up_action")
+        val SWIPE_DOWN_ACTION = stringPreferencesKey("swipe_down_action")
+        val MOVE_TO_FOLDER_BUCKET_ID = longPreferencesKey("move_to_folder_bucket_id")
+        val MOVE_TO_FOLDER_NAME = stringPreferencesKey("move_to_folder_name")
     }
 
     val settings: Flow<RoomieSettings> = context.dataStore.data.map { prefs ->
@@ -38,6 +45,16 @@ class SettingsRepository(private val context: Context) {
             monetizationEnabled = prefs[Keys.MONETIZATION_ENABLED] ?: defaults.monetizationEnabled,
             freeSwipeLimit = prefs[Keys.FREE_SWIPE_LIMIT] ?: defaults.freeSwipeLimit,
             isPremiumUnlocked = prefs[Keys.IS_PREMIUM_UNLOCKED] ?: defaults.isPremiumUnlocked,
+            swipeLeftAction = prefs[Keys.SWIPE_LEFT_ACTION]?.let { SwipeCardAction.valueOf(it) }
+                ?: defaults.swipeLeftAction,
+            swipeRightAction = prefs[Keys.SWIPE_RIGHT_ACTION]?.let { SwipeCardAction.valueOf(it) }
+                ?: defaults.swipeRightAction,
+            swipeUpAction = prefs[Keys.SWIPE_UP_ACTION]?.let { SwipeCardAction.valueOf(it) }
+                ?: defaults.swipeUpAction,
+            swipeDownAction = prefs[Keys.SWIPE_DOWN_ACTION]?.let { SwipeCardAction.valueOf(it) }
+                ?: defaults.swipeDownAction,
+            moveToFolderBucketId = prefs[Keys.MOVE_TO_FOLDER_BUCKET_ID],
+            moveToFolderName = prefs[Keys.MOVE_TO_FOLDER_NAME],
         )
     }
 
@@ -71,6 +88,29 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit {
             val current = it[Keys.SESSION_SWIPE_COUNT] ?: 0
             it[Keys.SESSION_SWIPE_COUNT] = current + 1
+        }
+    }
+
+    suspend fun setSwipeLeftAction(action: SwipeCardAction) {
+        context.dataStore.edit { it[Keys.SWIPE_LEFT_ACTION] = action.name }
+    }
+
+    suspend fun setSwipeRightAction(action: SwipeCardAction) {
+        context.dataStore.edit { it[Keys.SWIPE_RIGHT_ACTION] = action.name }
+    }
+
+    suspend fun setSwipeUpAction(action: SwipeCardAction) {
+        context.dataStore.edit { it[Keys.SWIPE_UP_ACTION] = action.name }
+    }
+
+    suspend fun setSwipeDownAction(action: SwipeCardAction) {
+        context.dataStore.edit { it[Keys.SWIPE_DOWN_ACTION] = action.name }
+    }
+
+    suspend fun setMoveToFolder(bucketId: Long, name: String) {
+        context.dataStore.edit {
+            it[Keys.MOVE_TO_FOLDER_BUCKET_ID] = bucketId
+            it[Keys.MOVE_TO_FOLDER_NAME] = name
         }
     }
 }

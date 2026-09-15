@@ -1,19 +1,15 @@
 package com.roomie.app.data.trash
 
 import android.app.RecoverableSecurityException
-import android.content.ContentValues
 import android.content.Context
 import android.content.IntentSender
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import java.io.File
-import com.roomie.app.data.db.FavoriteDao
-import com.roomie.app.data.db.FavoriteEntity
 import com.roomie.app.data.db.TrashDao
 import com.roomie.app.data.db.TrashEntry
 import com.roomie.app.data.media.MediaGroup
-import com.roomie.app.data.media.MediaItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
@@ -31,7 +27,6 @@ import java.util.concurrent.TimeUnit
 class TrashRepository(
     private val context: Context,
     private val trashDao: TrashDao,
-    private val favoriteDao: FavoriteDao,
 ) {
     private val resolver get() = context.contentResolver
 
@@ -95,45 +90,6 @@ class TrashRepository(
             trashDao.deleteByIds(deletedIds)
         }
         CleanupResult(freedBytes, affectedDirs)
-    }
-
-    // --- Favorites: same "batch, then one consent" principle as trashing (see FavoriteEntity). ---
-
-    suspend fun setFavoriteLocally(item: MediaItem, isFavorite: Boolean) =
-        withContext(Dispatchers.IO) {
-            favoriteDao.upsert(
-                FavoriteEntity(
-                    stableId = item.stableId,
-                    uri = item.uri.toString(),
-                    isFavorite = isFavorite,
-                    syncedToMediaStore = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q,
-                    updatedAtMillis = System.currentTimeMillis(),
-                ),
-            )
-        }
-
-    /** Pushes any pending favorite/unfavorite state to real MediaStore rows in one batch, Q+ only. */
-    suspend fun syncFavoritesToMediaStore() = withContext(Dispatchers.IO) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return@withContext
-        val unsynced = favoriteDao.getUnsynced()
-        if (unsynced.isEmpty()) return@withContext
-
-        val syncedIds = mutableListOf<String>()
-        for (fav in unsynced) {
-            val uri = Uri.parse(fav.uri)
-            val values = ContentValues().apply {
-                put(MediaStore.MediaColumns.IS_FAVORITE, if (fav.isFavorite) 1 else 0)
-            }
-            val ok = try {
-                resolver.update(uri, values, null, null) > 0
-            } catch (_: RecoverableSecurityException) {
-                false
-            } catch (_: SecurityException) {
-                false
-            }
-            if (ok) syncedIds += fav.stableId
-        }
-        if (syncedIds.isNotEmpty()) favoriteDao.markSynced(syncedIds)
     }
 }
 

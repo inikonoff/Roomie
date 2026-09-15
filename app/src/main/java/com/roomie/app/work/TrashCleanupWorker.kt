@@ -28,7 +28,6 @@ class TrashCleanupWorker(
         val container = (applicationContext as RoomieApplication).container
         return try {
             val cleanup = container.trashRepository.permanentlyDeleteExpired()
-            container.trashRepository.syncFavoritesToMediaStore()
 
             val settings = container.settingsRepository.settings.first()
             if (settings.autoDeleteEmptyFolders && cleanup.affectedDirs.isNotEmpty()) {

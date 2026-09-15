@@ -25,7 +25,7 @@ class ViewModelFactory(private val container: AppContainer) : ViewModelProvider.
             ) as T
 
         SettingsViewModel::class.java ->
-            SettingsViewModel(container.settingsRepository) as T
+            SettingsViewModel(container.settingsRepository, container.mediaRepository) as T
 
         else -> throw IllegalArgumentException("Unknown ViewModel class: $modelClass")
     }
