@@ -86,6 +86,18 @@ fun TrashFolderScreen(
         }
     }
 
+    // The cleanup worker can't get consent for a real delete from the background (see
+    // TrashRepository.permanentlyDeleteExpired), so anything already past its retention window
+    // just sits here until this screen is opened — pick it up automatically, right away, instead
+    // of making the user notice and tap "empty trash" themselves.
+    LaunchedEffect(entries) {
+        val now = System.currentTimeMillis()
+        val expired = entries.filter { it.permanentDeleteAtMillis <= now }
+        if (expired.isNotEmpty()) {
+            viewModel.requestDeleteForever(expired)
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(

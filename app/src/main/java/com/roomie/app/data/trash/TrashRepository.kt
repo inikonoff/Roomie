@@ -91,9 +91,23 @@ class TrashRepository(
         trashDao.deleteByIds(items.map { it.stableId })
     }
 
-    /** Runs on [com.roomie.app.work.TrashCleanupWorker]'s schedule. */
+    /**
+     * Runs on [com.roomie.app.work.TrashCleanupWorker]'s schedule — a background job with no
+     * Activity, so it can never show the consent dialog [buildDeleteRequest] needs on API 30+.
+     * Calling `resolver.delete()` there anyway would just throw [RecoverableSecurityException] for
+     * every single file, every run, forever, and silently do nothing — expired entries would sit
+     * in Room indefinitely. On those versions this deliberately leaves expired entries alone;
+     * [com.roomie.app.ui.screens.trash.TrashFolderScreen] picks them up and runs them through the
+     * real, consenting delete flow the next time it's opened. Pre-30, deleting someone else's media
+     * needs no consent at all, so the worker can (and does) finish the job itself.
+     */
     suspend fun permanentlyDeleteExpired(): CleanupResult = withContext(Dispatchers.IO) {
-        deleteEntries(trashDao.getExpired(System.currentTimeMillis()))
+        val expired = trashDao.getExpired(System.currentTimeMillis())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            CleanupResult(freedBytes = 0L, affectedDirs = emptySet())
+        } else {
+            deleteEntries(expired)
+        }
     }
 
     /**

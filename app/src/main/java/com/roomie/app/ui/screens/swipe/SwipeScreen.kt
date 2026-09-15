@@ -25,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -56,11 +58,14 @@ import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil3.imageLoader
+import coil3.request.ImageRequest
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.data.settings.CardAnimationStyle
 import com.roomie.app.ui.strings.AppStrings
@@ -114,7 +119,13 @@ fun SwipeScreen(
                 },
                 actions = {
                     IconButton(onClick = onOpenTrash) {
-                        Icon(Icons.Filled.Delete, contentDescription = strings.reviewTrash)
+                        if (uiState.deletedCount > 0) {
+                            BadgedBox(badge = { Badge { Text(uiState.deletedCount.toString()) } }) {
+                                Icon(Icons.Filled.Delete, contentDescription = strings.reviewTrash)
+                            }
+                        } else {
+                            Icon(Icons.Filled.Delete, contentDescription = strings.reviewTrash)
+                        }
                     }
                 },
             )
@@ -294,8 +305,27 @@ private fun CardStack(
 
     val top = stack.getOrNull(0)
     val behind = stack.getOrNull(1)
+    val prefetch = stack.getOrNull(2)
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        // Only stack[0] and stack[1] are actually composed (below) — by the time a fast swiper
+        // reaches stack[2] it would otherwise not have started decoding at all. Warming Coil's
+        // cache for it one card early removes that gap without paying for a third on-screen card.
+        val context = LocalContext.current
+        val density = LocalDensity.current
+        LaunchedEffect(prefetch?.key, maxWidth, maxHeight) {
+            val group = prefetch ?: return@LaunchedEffect
+            val (w, h) = fitSize(group.cover.aspectRatio, maxWidth, maxHeight)
+            val widthPx = with(density) { w.roundToPx() }.coerceAtLeast(1)
+            val heightPx = with(density) { h.roundToPx() }.coerceAtLeast(1)
+            context.imageLoader.enqueue(
+                ImageRequest.Builder(context)
+                    .data(group.cover.uri)
+                    .size(widthPx, heightPx)
+                    .build(),
+            )
+        }
+
         if (behind != null) {
             // Rendered at the exact same size/opacity it will have once promoted to the top spot
             // (no scale-down/dim "peek" look) — anything different between the two would show up
@@ -445,6 +475,9 @@ private fun DraggableCard(
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     var pastThreshold by remember(group.key) { mutableStateOf(false) }
+    // While zoomed, SwipeCard switches to requesting the source's full resolution instead of a
+    // screen-sized one — worth the extra decode time only for this deliberate, held-down peek.
+    var isZoomed by remember(group.key) { mutableStateOf(false) }
     val density = LocalDensity.current
     val thresholdPx = with(density) { SWIPE_THRESHOLD_DP.dp.toPx() }
     val cardWidthPx = with(density) { cardWidth.toPx() }
@@ -456,6 +489,7 @@ private fun DraggableCard(
 
     SwipeCard(
         group = group,
+        isZoomed = isZoomed,
         modifier = Modifier
             .size(cardWidth, cardHeight)
             .graphicsLayer {
@@ -502,6 +536,7 @@ private fun DraggableCard(
                     },
                     onZoomStart = { origin ->
                         zoomOrigin = origin
+                        isZoomed = true
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         scope.launch { scale.animateTo(MAX_PEEK_ZOOM, ZOOM_SPRING) }
                     },
@@ -524,6 +559,7 @@ private fun DraggableCard(
                         // back to center now too — otherwise it would stay wherever the last
                         // long-press happened and throw off this card's own swipe rotation later.
                         zoomOrigin = TransformOrigin.Center
+                        isZoomed = false
                         scope.launch { scale.animateTo(1f, ZOOM_SPRING) }
                         scope.launch { zoomPan.animateTo(Offset.Zero, ZOOM_PAN_SPRING) }
                     },

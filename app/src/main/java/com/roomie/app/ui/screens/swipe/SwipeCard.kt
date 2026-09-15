@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
@@ -39,13 +41,14 @@ import java.util.concurrent.TimeUnit
 fun SwipeCard(
     group: MediaGroup,
     modifier: Modifier = Modifier,
+    isZoomed: Boolean = false,
 ) {
     val strings = LocalAppStrings.current
     // Resets to the thumbnail whenever the card changes, so a new photo/video never inherits the
     // previous one's "currently playing" state.
     var isPlayingVideo by remember(group.key) { mutableStateOf(false) }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .clip(CardShape)
             .background(MaterialTheme.colorScheme.surface, CardShape),
@@ -57,15 +60,21 @@ fun SwipeCard(
                 onClose = { isPlayingVideo = false },
             )
         } else {
+            val context = LocalContext.current
+            val density = LocalDensity.current
+            val requestBuilder = ImageRequest.Builder(context).data(group.cover.uri)
+            if (isZoomed) {
+                // Only while actually zoomed in does the extra detail of the source's own
+                // resolution matter — requesting it for every ordinary card was what made rapid
+                // swiping feel laggy (a 12+MP photo takes real time to decode).
+                requestBuilder.size(Size.ORIGINAL)
+            } else {
+                val widthPx = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
+                val heightPx = with(density) { maxHeight.roundToPx() }.coerceAtLeast(1)
+                requestBuilder.size(widthPx, heightPx)
+            }
             AsyncImage(
-                // Requesting the source's own resolution instead of letting Coil downsample to
-                // this card's on-screen size — otherwise the long-press peek zoom just upscales an
-                // already-shrunk bitmap and looks like a blown-up thumbnail instead of a sharp
-                // photo.
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(group.cover.uri)
-                    .size(Size.ORIGINAL)
-                    .build(),
+                model = requestBuilder.build(),
                 contentDescription = group.cover.displayName,
                 // The card is already sized to this item's own aspect ratio by the caller, so Fit
                 // fills it exactly — showing photos in their native orientation instead of
