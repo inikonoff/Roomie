@@ -77,10 +77,17 @@ fun TrashFolderScreen(
         pendingDelete = null
         if (request != null && result.resultCode == Activity.RESULT_OK) {
             viewModel.onDeleteConfirmed(request.entries)
+        } else {
+            // Cancelled/dismissed — must still clear the ViewModel's in-flight guard, or a
+            // declined dialog would block every future delete attempt forever.
+            viewModel.onDeleteFlowCancelled()
         }
     }
     LaunchedEffect(viewModel) {
         viewModel.deleteConfirmationEvents.collect { request ->
+            // A second confirmation landing while one dialog is already up would otherwise call
+            // launch() again before the first has returned a result, which crashes the launcher.
+            if (pendingDelete != null) return@collect
             pendingDelete = request
             deleteLauncher.launch(IntentSenderRequest.Builder(request.intentSender).build())
         }
@@ -90,10 +97,16 @@ fun TrashFolderScreen(
     // TrashRepository.permanentlyDeleteExpired), so anything already past its retention window
     // just sits here until this screen is opened — pick it up automatically, right away, instead
     // of making the user notice and tap "empty trash" themselves.
+    //
+    // Tracked separately from the guards above: this effect re-runs on every `entries` emission,
+    // including the one caused by its own request being confirmed, so without remembering which
+    // stableIds were already sent it would keep re-requesting the same (still-pending) entries.
+    var requestedForDeletion by remember { mutableStateOf<Set<String>>(emptySet()) }
     LaunchedEffect(entries) {
         val now = System.currentTimeMillis()
-        val expired = entries.filter { it.permanentDeleteAtMillis <= now }
+        val expired = entries.filter { it.permanentDeleteAtMillis <= now && it.stableId !in requestedForDeletion }
         if (expired.isNotEmpty()) {
+            requestedForDeletion = requestedForDeletion + expired.map { it.stableId }
             viewModel.requestDeleteForever(expired)
         }
     }

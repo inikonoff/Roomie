@@ -29,6 +29,13 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
     private val _deleteConfirmationEvents = MutableSharedFlow<TrashDeleteRequest>()
     val deleteConfirmationEvents: SharedFlow<TrashDeleteRequest> = _deleteConfirmationEvents
 
+    /** Guards against two overlapping delete requests — e.g. the expired-entries auto-trigger and
+     *  a manual "empty trash" tap both firing around the same Room update — which would otherwise
+     *  call `deleteLauncher.launch()` a second time before the first system dialog has returned a
+     *  result, crashing the ActivityResultLauncher. Cleared in [onDeleteConfirmed] and by
+     *  [onDeleteFlowCancelled] when the caller's launcher gets a non-OK result (e.g. cancelled). */
+    private var deleteInFlight = false
+
     fun restore(entry: TrashEntry) {
         viewModelScope.launch { trashRepository.restoreFromTrash(listOf(entry)) }
     }
@@ -36,13 +43,20 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
     /** Permanently deletes [entries] now instead of waiting out the retention countdown — the
      *  "empty trash" action passes every current entry. */
     fun requestDeleteForever(entries: List<TrashEntry>) {
-        if (entries.isEmpty()) return
+        if (entries.isEmpty() || deleteInFlight) return
+        deleteInFlight = true
         viewModelScope.launch {
-            val intentSender = trashRepository.buildDeleteRequest(entries)
-            if (intentSender != null) {
-                _deleteConfirmationEvents.emit(TrashDeleteRequest(intentSender, entries))
-            } else {
-                trashRepository.permanentlyDelete(entries)
+            try {
+                val intentSender = trashRepository.buildDeleteRequest(entries)
+                if (intentSender != null) {
+                    _deleteConfirmationEvents.emit(TrashDeleteRequest(intentSender, entries))
+                } else {
+                    trashRepository.permanentlyDelete(entries)
+                    deleteInFlight = false
+                }
+            } catch (e: Throwable) {
+                deleteInFlight = false
+                throw e
             }
         }
     }
@@ -50,5 +64,12 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
     /** Called once the system delete-confirmation dialog (API 30+) has been confirmed. */
     fun onDeleteConfirmed(entries: List<TrashEntry>) {
         viewModelScope.launch { trashRepository.permanentlyDelete(entries) }
+        deleteInFlight = false
+    }
+
+    /** Called when the delete-confirmation dialog was dismissed/cancelled instead of confirmed,
+     *  so a cancelled dialog doesn't block every future delete attempt forever. */
+    fun onDeleteFlowCancelled() {
+        deleteInFlight = false
     }
 }
