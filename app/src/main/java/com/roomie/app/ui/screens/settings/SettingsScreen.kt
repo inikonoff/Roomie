@@ -38,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.roomie.app.data.media.GalleryFolder
 import com.roomie.app.data.media.SortOrder
@@ -121,6 +122,20 @@ fun SettingsScreen(
     }
 }
 
+/** A segmented-button label that can never wrap to a second line and spill past the button's
+ *  fixed height into whatever is below it — Material3's SegmentedButton doesn't grow for
+ *  multi-line content, so without this a longer translation (Russian labels run noticeably
+ *  longer than English ones) visually overlapped the row underneath instead of just wrapping. */
+@Composable
+private fun SegmentedLabel(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
 @Composable
 private fun SectionTitle(text: String) {
     Text(
@@ -154,7 +169,7 @@ private fun ThemeModeSelector(strings: AppStrings, current: ThemeMode, onSelecte
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 icon = {},
             ) {
-                Text(mode.label(strings))
+                SegmentedLabel(mode.label(strings))
             }
         }
     }
@@ -172,7 +187,7 @@ private fun LanguageModeSelector(strings: AppStrings, current: LanguageMode, onS
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 icon = {},
             ) {
-                Text(mode.label(strings))
+                SegmentedLabel(mode.label(strings))
             }
         }
     }
@@ -193,7 +208,7 @@ private fun SortOrderSelector(strings: AppStrings, current: SortOrder, onSelecte
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 icon = {},
             ) {
-                Text(label)
+                SegmentedLabel(label)
             }
         }
     }
@@ -211,7 +226,7 @@ private fun RetentionSelector(strings: AppStrings, currentDays: Int, onSelected:
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 icon = {},
             ) {
-                Text(strings.retentionDays(days))
+                SegmentedLabel(strings.retentionDays(days))
             }
         }
     }
@@ -252,7 +267,7 @@ private fun CardAnimationStyleSelector(
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 icon = {},
             ) {
-                Text(style.label(strings))
+                SegmentedLabel(style.label(strings))
             }
         }
     }
@@ -274,7 +289,7 @@ private fun GesturePresetRow(
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 icon = {},
             ) {
-                Text(preset.label(strings))
+                SegmentedLabel(preset.label(strings))
             }
         }
     }
