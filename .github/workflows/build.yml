@@ -20,8 +20,14 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Accept Android SDK licenses
+        # android-actions/setup-android@v3 also tries to install the long-deprecated legacy
+        # "tools" package, which Google's repository has stopped serving — it now fails the whole
+        # job before our code ever builds. ubuntu-latest already ships a usable SDK at
+        # $ANDROID_HOME; all that's actually needed is accepting its licenses.
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager | sort -V | tail -n1)
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
 
       - name: Make gradlew executable
         run: chmod +x gradlew
