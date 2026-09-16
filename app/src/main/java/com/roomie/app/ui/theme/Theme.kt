@@ -16,16 +16,26 @@ private val LightColors = lightColorScheme(
     secondary = Secondary,
     onBackground = OnSurface,
     onSurface = OnSurface,
+    onSurfaceVariant = OnSurfaceVariant,
+    surfaceVariant = SurfaceMuted,
+    outline = Outline,
+    secondaryContainer = SelectedContainer,
+    onSecondaryContainer = OnSelectedContainer,
     error = SwipeLeftDelete,
 )
 
 private val DarkColors = darkColorScheme(
-    background = Color(0xFF221C19),
-    surface = Color(0xFF2D2522),
+    background = Color(0xFF1C1815),
+    surface = Color(0xFF2A241F),
     primary = Primary,
     secondary = Secondary,
-    onBackground = Surface,
-    onSurface = Surface,
+    onBackground = Color(0xFFF3EBE0),
+    onSurface = Color(0xFFF3EBE0),
+    onSurfaceVariant = Color(0xFFB8AFA3),
+    surfaceVariant = Color(0xFF352D26),
+    outline = Color(0xFF3F372F),
+    secondaryContainer = Color(0xFF4A362C),
+    onSecondaryContainer = Color(0xFFF0D0C8),
     error = SwipeLeftDelete,
 )
 

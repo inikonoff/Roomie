@@ -140,15 +140,6 @@ fun SettingsScreen(
                 SwipeActionRow(strings.swipeDown, strings, settings.swipeDownAction, viewModel::setSwipeDownAction)
                 MoveToFolderRow(strings, settings.moveToFolderName, folders, viewModel::setMoveToFolder)
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            SwitchRow(
-                title = strings.enableSwipeLimit,
-                subtitle = if (settings.isPremiumUnlocked) strings.unlockedLimitDisabled else null,
-                checked = settings.monetizationEnabled,
-                onCheckedChange = viewModel::setMonetizationEnabled,
-            )
         }
     }
 }
