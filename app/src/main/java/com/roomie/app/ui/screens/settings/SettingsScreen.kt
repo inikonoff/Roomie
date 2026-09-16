@@ -45,6 +45,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +57,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -70,6 +72,7 @@ import com.roomie.app.ui.screens.swipe.SwipeDirection
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.ContainerShape
+import com.roomie.app.util.formatBytes
 import com.roomie.app.ui.theme.DeleteContainer
 import com.roomie.app.ui.theme.FolderAction
 import com.roomie.app.ui.theme.FolderContainer
@@ -89,7 +92,10 @@ fun SettingsScreen(
 ) {
     val settings by viewModel.settings.collectAsState()
     val folders by viewModel.folders.collectAsState()
+    val thumbnailCacheBytes by viewModel.thumbnailCacheBytes.collectAsState()
     val strings = LocalAppStrings.current
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { viewModel.refreshThumbnailCacheSize(context) }
 
     Scaffold(
         topBar = {
@@ -189,6 +195,14 @@ fun SettingsScreen(
                     title = strings.autoDeleteEmptyFolders,
                     checked = settings.autoDeleteEmptyFolders,
                     onCheckedChange = viewModel::setAutoDeleteEmptyFolders,
+                )
+
+                // No confirmation dialog: this only ever deletes re-derivable cache files, not user
+                // data, so the extra step that trash/delete flows need would just be friction here.
+                LabelValueRow(
+                    label = strings.clearThumbnailCache,
+                    value = formatBytes(thumbnailCacheBytes),
+                    modifier = Modifier.clickable { viewModel.clearThumbnailCache(context) },
                 )
             }
 

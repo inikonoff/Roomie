@@ -1,5 +1,6 @@
 package com.roomie.app.ui.screens.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.roomie.app.data.media.GalleryFolder
@@ -11,7 +12,9 @@ import com.roomie.app.data.settings.RoomieSettings
 import com.roomie.app.data.settings.SettingsRepository
 import com.roomie.app.data.settings.SwipeCardAction
 import com.roomie.app.data.settings.ThemeMode
+import com.roomie.app.ui.components.ThumbnailDiskCache
 import com.roomie.app.ui.strings.AppStrings
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -33,8 +36,26 @@ class SettingsViewModel(
     private val _folders = MutableStateFlow<List<GalleryFolder>>(emptyList())
     val folders: StateFlow<List<GalleryFolder>> = _folders.asStateFlow()
 
+    /** Live size of [ThumbnailDiskCache], not a persisted setting — just disk state recomputed on
+     *  request (screen open, after a clear) rather than something to keep in RoomieSettings/DataStore. */
+    private val _thumbnailCacheBytes = MutableStateFlow(0L)
+    val thumbnailCacheBytes: StateFlow<Long> = _thumbnailCacheBytes.asStateFlow()
+
     init {
         viewModelScope.launch { _folders.value = mediaRepository.getFolders() }
+    }
+
+    fun refreshThumbnailCacheSize(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _thumbnailCacheBytes.value = ThumbnailDiskCache.sizeBytes(context)
+        }
+    }
+
+    fun clearThumbnailCache(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            ThumbnailDiskCache.clear(context)
+            _thumbnailCacheBytes.value = 0L
+        }
     }
 
     fun setSortOrder(order: SortOrder) {

@@ -89,6 +89,7 @@ interface AppStrings {
     val noFoldersFoundYet: String
     val cancel: String
     val autoDeleteEmptyFolders: String
+    val clearThumbnailCache: String
     val enableSwipeLimit: String
     val unlockedLimitDisabled: String
 
@@ -193,6 +194,7 @@ object EnglishStrings : AppStrings {
     override val noFoldersFoundYet = "No folders found yet."
     override val cancel = "Cancel"
     override val autoDeleteEmptyFolders = "Delete empty folders automatically"
+    override val clearThumbnailCache = "Clear thumbnail cache"
     override val enableSwipeLimit = "Enable swipe limit & monetization"
     override val unlockedLimitDisabled = "Unlocked — limit disabled"
 
@@ -295,6 +297,7 @@ object RussianStrings : AppStrings {
     override val noFoldersFoundYet = "Папки пока не найдены."
     override val cancel = "Отмена"
     override val autoDeleteEmptyFolders = "Удалять пустые папки автоматически"
+    override val clearThumbnailCache = "Очистить кэш превью"
     override val enableSwipeLimit = "Включить лимит свайпов и монетизацию"
     override val unlockedLimitDisabled = "Разблокировано — лимит отключён"
 

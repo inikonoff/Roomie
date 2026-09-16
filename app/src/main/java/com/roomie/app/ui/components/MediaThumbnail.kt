@@ -1,6 +1,7 @@
 package com.roomie.app.ui.components
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.util.LruCache
@@ -11,14 +12,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import coil3.BitmapImage
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val VIDEO_THUMBNAIL_PX = 320
@@ -62,14 +67,19 @@ fun MediaThumbnail(
         val bitmap by produceState(videoThumbnailCache.get(key), uri) {
             if (value == null) {
                 value = withContext(Dispatchers.IO) {
-                    runCatching {
+                    // Disk cache first — MediaMetadataRetriever-backed loadThumbnail is a real
+                    // frame-extraction decode, objectively pricier than a photo decode, and until
+                    // now was only ever cached in memory for the life of the process.
+                    val cacheFile = ThumbnailDiskCache.fileFor(context, "video|$key|$VIDEO_THUMBNAIL_PX")
+                    val fromDisk = if (cacheFile.exists()) BitmapFactory.decodeFile(cacheFile.path) else null
+                    fromDisk ?: runCatching {
                         context.contentResolver.loadThumbnail(
                             uri,
                             Size(VIDEO_THUMBNAIL_PX, VIDEO_THUMBNAIL_PX),
                             null,
                         )
-                    }.getOrNull()?.also { videoThumbnailCache.put(key, it) }
-                }
+                    }.getOrNull()?.also { bmp -> ThumbnailDiskCache.write(cacheFile, bmp) }
+                }?.also { videoThumbnailCache.put(key, it) }
             }
         }
         Box(modifier = modifier) {
@@ -84,9 +94,16 @@ fun MediaThumbnail(
         }
     } else {
         val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        // Disk-cache key is uri + target size, matching the video path above — a cache hit here
+        // skips decoding/downsampling the original file entirely (Glide's DiskCacheStrategy
+        // .RESOURCE equivalent), not just re-reading already-decoded bytes off MediaStore. remember
+        // keyed on uri so a recomposition doesn't re-stat the file on every frame.
+        val cacheFile = remember(uri) { ThumbnailDiskCache.fileFor(context, "$uri|$GRID_THUMBNAIL_PX") }
+        val cacheHit = remember(cacheFile) { cacheFile.exists() }
         AsyncImage(
             model = ImageRequest.Builder(context)
-                .data(uri)
+                .data(if (cacheHit) cacheFile else uri)
                 .size(GRID_THUMBNAIL_PX, GRID_THUMBNAIL_PX)
                 // Many short-lived tiles churn through a grid on every scroll. A HARDWARE bitmap
                 // (Coil's default on API 26+) is a GPU buffer allocated via gralloc IPC — cheap to
@@ -94,6 +111,18 @@ fun MediaThumbnail(
                 // (framestats showed ~5s GPU-time spikes and ~71MB of live AHardwareBuffers sized
                 // exactly like these thumbnails). Software ARGB_8888 is cheaper for this pattern.
                 .allowHardware(false)
+                .apply {
+                    // Cache miss only: once Coil finishes decoding+downsampling, stash the result on
+                    // disk for the next cold start. Doesn't block this load — write happens in the
+                    // background, on whatever bitmap already exists in memory.
+                    if (!cacheHit) {
+                        listener(onSuccess = { _, result ->
+                            (result.image as? BitmapImage)?.bitmap?.let { bitmap ->
+                                scope.launch { ThumbnailDiskCache.write(cacheFile, bitmap) }
+                            }
+                        })
+                    }
+                }
                 .build(),
             contentDescription = contentDescription,
             contentScale = contentScale,
