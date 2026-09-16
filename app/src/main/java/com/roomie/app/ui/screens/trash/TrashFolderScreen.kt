@@ -41,7 +41,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.roomie.app.CrashReporter
 import com.roomie.app.data.db.TrashEntry
 import com.roomie.app.ui.components.MediaThumbnail
 import com.roomie.app.ui.strings.AppStrings
@@ -64,6 +66,7 @@ fun TrashFolderScreen(
 ) {
     val entries by viewModel.entries.collectAsState()
     val strings = LocalAppStrings.current
+    val context = LocalContext.current
     var showEmptyTrashConfirm by remember { mutableStateOf(false) }
 
     // Same "wait for the real system result, not just launch() returning" pattern used for
@@ -73,6 +76,9 @@ fun TrashFolderScreen(
     val deleteLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult(),
     ) { result ->
+        // Temporary diagnostic checkpoint — see TrashRepository for why (a crash CrashReporter's
+        // uncaught-exception handler never sees, so this file survives it instead).
+        CrashReporter.mark(context, "trash_delete:launcher_result:code=${result.resultCode}")
         val request = pendingDelete
         pendingDelete = null
         if (request != null && result.resultCode == Activity.RESULT_OK) {

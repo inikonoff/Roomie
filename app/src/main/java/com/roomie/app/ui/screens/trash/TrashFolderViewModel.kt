@@ -47,11 +47,14 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
         deleteInFlight = true
         viewModelScope.launch {
             try {
-                val intentSender = trashRepository.buildDeleteRequest(entries)
+                // valid excludes anything that no longer resolves in MediaStore (already deleted
+                // or replaced outside Roomie) — buildDeleteRequest drops those from Room itself,
+                // so confirmation/deletion below only ever sees entries that still exist.
+                val (valid, intentSender) = trashRepository.buildDeleteRequest(entries)
                 if (intentSender != null) {
-                    _deleteConfirmationEvents.emit(TrashDeleteRequest(intentSender, entries))
+                    _deleteConfirmationEvents.emit(TrashDeleteRequest(intentSender, valid))
                 } else {
-                    trashRepository.permanentlyDelete(entries)
+                    if (valid.isNotEmpty()) trashRepository.permanentlyDelete(valid)
                     deleteInFlight = false
                 }
             } catch (e: Throwable) {
@@ -63,8 +66,10 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
 
     /** Called once the system delete-confirmation dialog (API 30+) has been confirmed. */
     fun onDeleteConfirmed(entries: List<TrashEntry>) {
-        viewModelScope.launch { trashRepository.permanentlyDelete(entries) }
-        deleteInFlight = false
+        viewModelScope.launch {
+            trashRepository.permanentlyDelete(entries)
+            deleteInFlight = false
+        }
     }
 
     /** Called when the delete-confirmation dialog was dismissed/cancelled instead of confirmed,

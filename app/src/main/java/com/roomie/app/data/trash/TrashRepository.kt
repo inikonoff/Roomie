@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import java.io.File
+import com.roomie.app.CrashReporter
 import com.roomie.app.data.db.TrashDao
 import com.roomie.app.data.db.TrashEntry
 import com.roomie.app.data.media.MediaGroup
@@ -121,24 +122,61 @@ class TrashRepository(
     }
 
     /**
-     * Returns the [IntentSender] for the single system confirmation dialog on API 30+
-     * ([MediaStore.createDeleteRequest]), or null on older versions where deleting just goes
-     * straight through [android.content.ContentResolver.delete] (and may throw
-     * [RecoverableSecurityException] per file, which [deleteEntries] treats as "skip, needs fresh
-     * consent" rather than trying to resolve it interactively).
+     * Returns the entries actually still present in MediaStore alongside the [IntentSender] for
+     * the single system confirmation dialog on API 30+ ([MediaStore.createDeleteRequest]) — or a
+     * null sender on older versions, where deleting just goes straight through
+     * [android.content.ContentResolver.delete] (and may throw [RecoverableSecurityException] per
+     * file, which [deleteEntries] treats as "skip, needs fresh consent" rather than trying to
+     * resolve it interactively).
+     *
+     * Entries whose URI no longer resolves in MediaStore (deleted or replaced outside Roomie) are
+     * dropped from Room here and excluded from the request — [MediaStore.createDeleteRequest] can
+     * throw for a URI it doesn't recognize, and there's nothing left in the trash to retry them
+     * with anyway. The whole call is also wrapped so an unexpected failure just yields "nothing to
+     * request" rather than crashing — the next visit to the trash folder will pick expired entries
+     * back up.
      */
-    fun buildDeleteRequest(entries: List<TrashEntry>): IntentSender? {
-        if (entries.isEmpty() || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
-        val uris = entries.map { Uri.parse(it.uri) }
-        return MediaStore.createDeleteRequest(resolver, uris).intentSender
-    }
+    suspend fun buildDeleteRequest(entries: List<TrashEntry>): Pair<List<TrashEntry>, IntentSender?> =
+        withContext(Dispatchers.IO) {
+            CrashReporter.mark(context, "trash_delete:build_request:count=${entries.size}")
+            if (entries.isEmpty() || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                return@withContext entries to null
+            }
+
+            val (valid, stale) = entries.partition { entry -> uriExists(Uri.parse(entry.uri)) }
+            CrashReporter.mark(context, "trash_delete:filtered:valid=${valid.size}:stale=${stale.size}")
+            if (stale.isNotEmpty()) {
+                trashDao.deleteByIds(stale.map { it.stableId })
+            }
+            if (valid.isEmpty()) return@withContext emptyList<TrashEntry>() to null
+
+            val sender = try {
+                val uris = valid.map { Uri.parse(it.uri) }
+                val intentSender = MediaStore.createDeleteRequest(resolver, uris).intentSender
+                CrashReporter.mark(context, "trash_delete:request_built")
+                intentSender
+            } catch (e: Exception) {
+                CrashReporter.mark(context, "trash_delete:create_request_failed:${e::class.simpleName}")
+                null
+            }
+            valid to sender
+        }
+
+    private fun uriExists(uri: Uri): Boolean =
+        try {
+            resolver.query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)
+                ?.use { it.moveToFirst() } ?: false
+        } catch (_: Exception) {
+            false
+        }
 
     private suspend fun deleteEntries(entries: List<TrashEntry>): CleanupResult {
         var freedBytes = 0L
         val deletedIds = mutableListOf<String>()
         val affectedDirs = mutableSetOf<File>()
 
-        for (entry in entries) {
+        for ((index, entry) in entries.withIndex()) {
+            CrashReporter.mark(context, "trash_delete:entry[$index/${entries.size}]:start:${entry.stableId}")
             val deleted = try {
                 resolver.delete(Uri.parse(entry.uri), null, null) > 0
             } catch (_: RecoverableSecurityException) {
@@ -147,6 +185,7 @@ class TrashRepository(
             } catch (_: SecurityException) {
                 false
             }
+            CrashReporter.mark(context, "trash_delete:entry[$index/${entries.size}]:done:deleted=$deleted")
             if (deleted) {
                 freedBytes += entry.sizeBytes
                 deletedIds += entry.stableId
@@ -156,6 +195,7 @@ class TrashRepository(
 
         if (deletedIds.isNotEmpty()) {
             trashDao.deleteByIds(deletedIds)
+            CrashReporter.mark(context, "trash_delete:room_cleaned:count=${deletedIds.size}")
         }
         return CleanupResult(freedBytes, affectedDirs)
     }
