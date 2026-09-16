@@ -37,7 +37,7 @@ import java.net.URLEncoder
 
 private object Routes {
     const val FOLDERS = "folders"
-    const val FOLDER_GRID = "folder_grid/{bucketId}/{displayName}/{period}"
+    const val FOLDER_GRID = "folder_grid/{bucketId}/{displayName}"
     const val SWIPE = "swipe/{bucketId}/{displayName}/{period}/{startAt}"
     const val TRASH_FOLDER = "trash_folder"
     const val SUMMARY = "summary"
@@ -47,10 +47,10 @@ private object Routes {
     const val ALL_PHOTOS_SENTINEL = "all"
     const val NO_START_SENTINEL = "start"
 
-    fun folderGrid(bucketId: Long?, displayName: String, period: PeriodFilter): String {
+    fun folderGrid(bucketId: Long?, displayName: String): String {
         val encodedName = URLEncoder.encode(displayName, "UTF-8")
         val bucket = bucketId?.toString() ?: ALL_PHOTOS_SENTINEL
-        return "folder_grid/$bucket/$encodedName/${period.name}"
+        return "folder_grid/$bucket/$encodedName"
     }
 
     fun swipe(bucketId: Long?, displayName: String, period: PeriodFilter, startAtStableId: String?): String {
@@ -97,8 +97,8 @@ fun RoomieNavHost(viewModelFactory: ViewModelFactory) {
             val folderListViewModel: FolderListViewModel = viewModel(factory = viewModelFactory)
             FolderListScreen(
                 viewModel = folderListViewModel,
-                onOpenFolder = { bucketId, displayName, period ->
-                    navController.navigate(Routes.folderGrid(bucketId, displayName, period))
+                onOpenFolder = { bucketId, displayName ->
+                    navController.navigate(Routes.folderGrid(bucketId, displayName))
                 },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onOpenTrash = { navController.navigate(Routes.TRASH_FOLDER) },
@@ -110,22 +110,23 @@ fun RoomieNavHost(viewModelFactory: ViewModelFactory) {
             arguments = listOf(
                 navArgument("bucketId") { type = NavType.StringType },
                 navArgument("displayName") { type = NavType.StringType },
-                navArgument("period") { type = NavType.StringType },
             ),
         ) { backStackEntry ->
             val args = backStackEntry.arguments!!
             val bucketIdArg = args.getString("bucketId")
             val bucketId = bucketIdArg?.takeIf { it != Routes.ALL_PHOTOS_SENTINEL }?.toLongOrNull()
             val displayName = URLDecoder.decode(args.getString("displayName") ?: "", "UTF-8")
-            val period = PeriodFilter.valueOf(args.getString("period") ?: PeriodFilter.ALL.name)
 
             val folderGridViewModel: FolderGridViewModel = viewModel(factory = viewModelFactory)
             FolderGridScreen(
                 viewModel = folderGridViewModel,
                 bucketId = bucketId,
                 displayName = displayName,
-                period = period,
                 onOpenSwipe = { startAtStableId ->
+                    // Read live from the ViewModel's own state, not a captured route argument —
+                    // the period can change while browsing this folder's grid, and the swipe
+                    // session must start with whatever's actually selected at tap time.
+                    val period = folderGridViewModel.uiState.value.period
                     navController.navigate(Routes.swipe(bucketId, displayName, period, startAtStableId))
                 },
                 onBack = { navController.popBackStack() },

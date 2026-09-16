@@ -7,8 +7,10 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.roomie.app.data.media.PeriodFilter
 import com.roomie.app.data.media.SortOrder
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "roomie_settings")
@@ -146,5 +148,20 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setLanguageMode(mode: LanguageMode) {
         context.dataStore.edit { it[Keys.LANGUAGE_MODE] = mode.name }
+    }
+
+    /** One saved period filter per folder (keyed by bucketId; `null` is the "All photos" bucket) —
+     *  a map of id to filter rather than a single scalar, which is why this uses its own
+     *  dynamically-named DataStore key instead of a field on [RoomieSettings] like everything else
+     *  here. Not worth a Room table for what's still just one small value per folder. */
+    suspend fun getFolderPeriodFilter(bucketId: Long?): PeriodFilter {
+        val key = stringPreferencesKey("period_filter_${bucketId ?: "all"}")
+        return context.dataStore.data.first()[key]?.let { runCatching { PeriodFilter.valueOf(it) }.getOrNull() }
+            ?: PeriodFilter.ALL
+    }
+
+    suspend fun setFolderPeriodFilter(bucketId: Long?, filter: PeriodFilter) {
+        val key = stringPreferencesKey("period_filter_${bucketId ?: "all"}")
+        context.dataStore.edit { it[key] = filter.name }
     }
 }

@@ -25,6 +25,6 @@ data class RoomieSettings(
         get() = monetizationEnabled && !isPremiumUnlocked && sessionSwipeCount >= freeSwipeLimit
 
     companion object {
-        val ALLOWED_RETENTION_DAYS = listOf(1, 3, 7, 30)
+        val ALLOWED_RETENTION_DAYS = (1..30).toList()
     }
 }

@@ -4,19 +4,24 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items as rowItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,15 +53,14 @@ fun FolderGridScreen(
     viewModel: FolderGridViewModel,
     bucketId: Long?,
     displayName: String,
-    period: PeriodFilter,
     onOpenSwipe: (startAtStableId: String) -> Unit,
     onBack: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val strings = LocalAppStrings.current
 
-    LaunchedEffect(bucketId, period) {
-        viewModel.load(bucketId, period)
+    LaunchedEffect(bucketId, displayName) {
+        viewModel.load(bucketId, displayName)
     }
 
     Scaffold(
@@ -71,32 +75,66 @@ fun FolderGridScreen(
             )
         },
     ) { padding ->
-        when {
-            uiState.isLoading -> Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator()
-            }
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            PeriodFilterRow(
+                strings = strings,
+                selected = uiState.period,
+                onSelected = { period -> viewModel.onPeriodSelected(bucketId, period) },
+            )
 
-            uiState.groups.isEmpty() -> Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(strings.nothingHere, style = MaterialTheme.typography.bodyLarge)
-            }
+            when {
+                uiState.isLoading -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
 
-            else -> LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.padding(padding),
-            ) {
-                items(uiState.groups, key = { it.key }) { group ->
-                    GridThumbnail(strings = strings, group = group, onClick = { onOpenSwipe(group.cover.stableId) })
+                uiState.groups.isEmpty() -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(strings.nothingHere, style = MaterialTheme.typography.bodyLarge)
+                }
+
+                else -> LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    contentPadding = PaddingValues(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(uiState.groups, key = { it.key }) { group ->
+                        GridThumbnail(
+                            strings = strings,
+                            group = group,
+                            onClick = { onOpenSwipe(group.cover.stableId) },
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PeriodFilterRow(strings: AppStrings, selected: PeriodFilter, onSelected: (PeriodFilter) -> Unit) {
+    val options = listOf(
+        PeriodFilter.ALL to strings.periodAll,
+        PeriodFilter.LAST_DAY to strings.periodDay,
+        PeriodFilter.LAST_MONTH to strings.periodMonth,
+        PeriodFilter.LAST_YEAR to strings.periodYear,
+    )
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        rowItems(options) { (filter, label) ->
+            FilterChip(
+                selected = filter == selected,
+                onClick = { onSelected(filter) },
+                label = { Text(label) },
+            )
         }
     }
 }

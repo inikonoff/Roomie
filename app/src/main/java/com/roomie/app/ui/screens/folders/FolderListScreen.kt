@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
@@ -27,7 +25,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,7 +46,6 @@ import androidx.compose.ui.unit.dp
 import android.net.Uri
 import coil3.compose.AsyncImage
 import com.roomie.app.data.media.GalleryFolder
-import com.roomie.app.data.media.PeriodFilter
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.ContainerShape
@@ -57,7 +53,7 @@ import com.roomie.app.ui.theme.ContainerShape
 @Composable
 fun FolderListScreen(
     viewModel: FolderListViewModel,
-    onOpenFolder: (bucketId: Long?, displayName: String, period: PeriodFilter) -> Unit,
+    onOpenFolder: (bucketId: Long?, displayName: String) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenTrash: () -> Unit,
 ) {
@@ -112,9 +108,7 @@ fun FolderListScreen(
                 strings = strings,
                 modifier = Modifier.padding(padding),
                 folders = uiState.folders,
-                period = uiState.period,
                 trashCount = trashCount,
-                onPeriodSelected = viewModel::onPeriodSelected,
                 onOpenFolder = onOpenFolder,
                 onOpenTrash = onOpenTrash,
             )
@@ -159,15 +153,11 @@ private fun FolderGrid(
     strings: AppStrings,
     modifier: Modifier = Modifier,
     folders: List<GalleryFolder>,
-    period: PeriodFilter,
     trashCount: Int,
-    onPeriodSelected: (PeriodFilter) -> Unit,
-    onOpenFolder: (Long?, String, PeriodFilter) -> Unit,
+    onOpenFolder: (Long?, String) -> Unit,
     onOpenTrash: () -> Unit,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        PeriodFilterRow(strings = strings, selected = period, onSelected = onPeriodSelected)
-
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             contentPadding = PaddingValues(16.dp),
@@ -178,7 +168,7 @@ private fun FolderGrid(
                 AllPhotosCard(
                     strings = strings,
                     totalCount = folders.sumOf { it.itemCount },
-                    onClick = { onOpenFolder(null, strings.allPhotos, period) },
+                    onClick = { onOpenFolder(null, strings.allPhotos) },
                 )
             }
             item {
@@ -188,31 +178,9 @@ private fun FolderGrid(
                 FolderCard(
                     folder = folder,
                     strings = strings,
-                    onClick = { onOpenFolder(folder.bucketId, folder.displayName, period) },
+                    onClick = { onOpenFolder(folder.bucketId, folder.displayName) },
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun PeriodFilterRow(strings: AppStrings, selected: PeriodFilter, onSelected: (PeriodFilter) -> Unit) {
-    val options = listOf(
-        PeriodFilter.ALL to strings.periodAll,
-        PeriodFilter.LAST_DAY to strings.periodDay,
-        PeriodFilter.LAST_MONTH to strings.periodMonth,
-        PeriodFilter.LAST_YEAR to strings.periodYear,
-    )
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(options) { (filter, label) ->
-            FilterChip(
-                selected = filter == selected,
-                onClick = { onSelected(filter) },
-                label = { Text(label) },
-            )
         }
     }
 }

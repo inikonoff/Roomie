@@ -1,5 +1,6 @@
 package com.roomie.app.ui.screens.settings
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -43,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,7 +60,15 @@ import com.roomie.app.data.settings.ThemeMode
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.ContainerShape
+import com.roomie.app.ui.theme.DeleteContainer
+import com.roomie.app.ui.theme.FolderAction
+import com.roomie.app.ui.theme.FolderContainer
+import com.roomie.app.ui.theme.KeepContainer
+import com.roomie.app.ui.theme.NoneAction
+import com.roomie.app.ui.theme.PostponeContainer
+import com.roomie.app.ui.theme.SurfaceMuted
 import com.roomie.app.ui.theme.SwipeLeftDelete
+import com.roomie.app.ui.theme.SwipePostpone
 import com.roomie.app.ui.theme.SwipeRightKeep
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -110,7 +121,6 @@ fun SettingsScreen(
                 SubsectionTitle(strings.sectionCardOrder)
                 SortOrderSelector(strings, settings.sortOrder, viewModel::setSortOrder)
 
-                SubsectionTitle(strings.sectionTrashRetention)
                 RetentionSelector(strings, settings.trashRetentionDays, viewModel::setTrashRetentionDays)
 
                 SwitchRow(
@@ -256,19 +266,24 @@ private fun SortOrderSelector(strings: AppStrings, current: SortOrder, onSelecte
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RetentionSelector(strings: AppStrings, currentDays: Int, onSelected: (Int) -> Unit) {
-    val options = RoomieSettings.ALLOWED_RETENTION_DAYS
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        options.forEachIndexed { index, days ->
-            SegmentedButton(
-                selected = currentDays == days,
-                onClick = { onSelected(days) },
-                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
-                icon = {},
-            ) {
-                SegmentedLabel(strings.retentionDays(days))
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        LabelValueRow(
+            label = strings.sectionTrashRetention,
+            value = strings.retentionDays(currentDays),
+            modifier = Modifier.clickable { expanded = true },
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            RoomieSettings.ALLOWED_RETENTION_DAYS.forEach { days ->
+                DropdownMenuItem(
+                    text = { Text(strings.retentionDays(days)) },
+                    onClick = {
+                        onSelected(days)
+                        expanded = false
+                    },
+                )
             }
         }
     }
@@ -282,13 +297,24 @@ private fun SwipeCardAction.label(strings: AppStrings): String = when (this) {
     SwipeCardAction.NONE -> strings.actionNone
 }
 
-/** Delete/Keep get their swipe-card colors so the effect of each direction is visible at a
- *  glance, without reading the text; every other action stays neutral. */
+/** Each action gets its own recognizable color, matching the swipe-card chip it corresponds to,
+ *  so the effect of a direction is visible at a glance without reading the text. */
 @Composable
-private fun SwipeCardAction.valueColor(): Color = when (this) {
+private fun SwipeCardAction.chipColor(): Color = when (this) {
     SwipeCardAction.DELETE -> SwipeLeftDelete
     SwipeCardAction.KEEP -> SwipeRightKeep
-    else -> MaterialTheme.colorScheme.secondary
+    SwipeCardAction.MOVE_TO_FOLDER -> FolderAction
+    SwipeCardAction.POSTPONE -> SwipePostpone
+    SwipeCardAction.NONE -> NoneAction
+}
+
+@Composable
+private fun SwipeCardAction.containerColor(): Color = when (this) {
+    SwipeCardAction.DELETE -> DeleteContainer
+    SwipeCardAction.KEEP -> KeepContainer
+    SwipeCardAction.MOVE_TO_FOLDER -> FolderContainer
+    SwipeCardAction.POSTPONE -> PostponeContainer
+    SwipeCardAction.NONE -> SurfaceMuted
 }
 
 private fun CardAnimationStyle.label(strings: AppStrings): String = when (this) {
@@ -409,12 +435,27 @@ private fun SwipeActionRow(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        LabelValueRow(
-            label = label,
-            value = current.label(strings),
-            valueColor = current.valueColor(),
-            modifier = Modifier.clickable { expanded = true },
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true }
+                .padding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            ActionChip(
+                text = current.label(strings),
+                chipColor = current.chipColor(),
+                containerColor = current.containerColor(),
+            )
+        }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             SwipeCardAction.entries.forEach { action ->
                 DropdownMenuItem(
@@ -426,6 +467,26 @@ private fun SwipeActionRow(
                 )
             }
         }
+    }
+}
+
+/** A colored, filled pill for a swipe action's current value — replaces plain colored text so the
+ *  action reads as a tappable chip rather than a color-coded label. */
+@Composable
+private fun ActionChip(text: String, chipColor: Color, containerColor: Color, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(containerColor)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium,
+            color = chipColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
