@@ -16,4 +16,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "Roomie"
 include(":app")
-include(":probe")
