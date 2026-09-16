@@ -129,6 +129,33 @@ class TrashRepository(
     }
 
     /**
+     * Catches Room up with a permanent delete the system already performed: once the user confirms
+     * the [IntentSender] from [buildDeleteRequest] (API 30+), `MediaStore.createDeleteRequest`
+     * deletes the underlying media itself — the app is not meant to (and must not) call
+     * [android.content.ContentResolver.delete] again for it. Doing so anyway (the previous bug
+     * here) just queries a URI that no longer exists, gets 0 rows affected, and treats that as
+     * "not deleted" — the Room entry, and so the Trash folder tile, was then left behind forever,
+     * only ever cleaned up incidentally the next time [buildDeleteRequest]'s staleness check ran.
+     * [onProgress] still reports (done, total) per entry so the caller can show the same live
+     * counter as [permanentlyDelete].
+     */
+    suspend fun confirmSystemDelete(
+        entries: List<TrashEntry>,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): CleanupResult = withContext(Dispatchers.IO) {
+        var freedBytes = 0L
+        val affectedDirs = mutableSetOf<File>()
+        for ((index, entry) in entries.withIndex()) {
+            trashDao.deleteByIds(listOf(entry.stableId))
+            freedBytes += entry.sizeBytes
+            entry.filePath?.let { path -> File(path).parentFile?.let { affectedDirs += it } }
+            CrashReporter.mark(context, "trash_delete:confirmed[$index/${entries.size}]:room_cleaned:${entry.stableId}")
+            onProgress(index + 1, entries.size)
+        }
+        CleanupResult(freedBytes, affectedDirs)
+    }
+
+    /**
      * Returns the entries actually still present in MediaStore alongside the [IntentSender] for
      * the single system confirmation dialog on API 30+ ([MediaStore.createDeleteRequest]) — or a
      * null sender on older versions, where deleting just goes straight through

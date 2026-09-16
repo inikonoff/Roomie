@@ -77,11 +77,13 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
         }
     }
 
-    /** Called once the system delete-confirmation dialog (API 30+) has been confirmed. */
+    /** Called once the system delete-confirmation dialog (API 30+) has been confirmed — at that
+     *  point MediaStore has already deleted the files itself, so this only needs to catch Room up
+     *  with that (see [TrashRepository.confirmSystemDelete]), not delete them a second time. */
     fun onDeleteConfirmed(entries: List<TrashEntry>) {
         viewModelScope.launch {
             _deleteProgress.value = 0 to entries.size
-            trashRepository.permanentlyDelete(entries) { done, total -> _deleteProgress.value = done to total }
+            trashRepository.confirmSystemDelete(entries) { done, total -> _deleteProgress.value = done to total }
             _deleteProgress.value = null
             deleteInFlight = false
         }
