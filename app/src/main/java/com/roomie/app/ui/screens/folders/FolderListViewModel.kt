@@ -34,13 +34,21 @@ class FolderListViewModel(
         initialValue = 0,
     )
 
+    // Navigation Compose recreates FolderListScreen's composition on every return to it, so its
+    // LaunchedEffect(Unit) → onPermissionResult() call fires again each time — without this guard,
+    // refresh() would unconditionally set isLoading = true and unmount the grid back to a spinner,
+    // remounting it from scratch with the scroll position reset to the top. Same class of bug
+    // already fixed for the swipe screen via loadedSessionKey.
+    private var hasLoaded = false
+
     fun onPermissionResult(granted: Boolean) {
         _uiState.update { it.copy(hasMediaPermission = granted) }
         if (granted) refresh()
     }
 
     fun refresh() {
-        if (!_uiState.value.hasMediaPermission) return
+        if (!_uiState.value.hasMediaPermission || hasLoaded) return
+        hasLoaded = true
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             val folders = mediaRepository.getFolders()

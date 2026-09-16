@@ -109,13 +109,14 @@ enum class SwipeGesturePreset(
     ;
 
     companion object {
-        /** Which preset (if any) the current four settings exactly match, so Settings can show
-         *  which one is active instead of leaving both options looking identically unselected. */
+        /** Which preset (if any) is active, judged by left/right alone — those are the two
+         *  directions SettingsScreen locks while a preset is selected (see `leftRightLocked`
+         *  there), and up/down stay freely editable under either preset. Comparing all four
+         *  directions here used to mean editing up/down alone made the tuple stop matching either
+         *  preset, silently unlocking left/right and dropping the Classic/Browse highlight even
+         *  though nothing about the locked directions had changed. */
         fun matching(settings: RoomieSettings): SwipeGesturePreset? = entries.find {
-            it.left == settings.swipeLeftAction &&
-                it.right == settings.swipeRightAction &&
-                it.up == settings.swipeUpAction &&
-                it.down == settings.swipeDownAction
+            it.left == settings.swipeLeftAction && it.right == settings.swipeRightAction
         }
     }
 }

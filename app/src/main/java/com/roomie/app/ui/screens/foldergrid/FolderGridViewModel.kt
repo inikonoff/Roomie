@@ -33,7 +33,18 @@ class FolderGridViewModel(
     private val _uiState = MutableStateFlow(FolderGridUiState())
     val uiState: StateFlow<FolderGridUiState> = _uiState.asStateFlow()
 
+    // Navigation Compose recreates this screen's composition on every return to it, re-firing
+    // LaunchedEffect(bucketId, displayName) → load() even for the same folder — without this guard
+    // that unconditionally reloaded and reset isLoading, unmounting the grid to a spinner and back,
+    // scrolled to the top. Same class of bug already fixed for the swipe screen via
+    // loadedSessionKey. A real forced reload (e.g. after files change) would need to bypass this
+    // guard and call loadWithPeriod directly — no such call site exists yet.
+    private var loadedKey: String? = null
+
     fun load(bucketId: Long?, displayName: String) {
+        val key = "$bucketId|$displayName"
+        if (key == loadedKey) return
+        loadedKey = key
         viewModelScope.launch {
             val savedPeriod = settingsRepository.getFolderPeriodFilter(bucketId)
             loadWithPeriod(bucketId, savedPeriod)
