@@ -337,6 +337,12 @@ private fun CardStack(
             )
         }
 
+        // Covers the entire stack area (not just the top card's own fitSize) so that while the top
+        // card is mid entrance-fade — semi-transparent — nothing of "behind" can show through past
+        // the top card's own edges either, however differently the two are oriented/sized (e.g. a
+        // portrait card behind a landscape one, or vice versa).
+        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+
         if (top != null) {
             val (w, h) = fitSize(top.cover.aspectRatio, maxWidth, maxHeight)
             DraggableCard(
@@ -405,8 +411,8 @@ private fun GraphicsLayerScope.applySwipeStyle(
 }
 
 private val SWIPE_SPRING = spring<Offset>(
-    dampingRatio = Spring.DampingRatioLowBouncy,
-    stiffness = Spring.StiffnessLow,
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = Spring.StiffnessMedium,
 )
 
 private val ZOOM_SPRING = spring<Float>(
@@ -464,7 +470,15 @@ private fun DraggableCard(
     animationStyle: CardAnimationStyle,
     onSwiped: (SwipeDirection, Offset) -> Unit,
 ) {
-    val offset = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
+    // Written to directly on every pointer-move event instead of through a suspend Animatable —
+    // launching a fresh coroutine per touch event (the previous approach, via snapTo) queues each
+    // update on the dispatcher instead of applying it immediately, and under a fast swipe with
+    // dozens of move events per second that queue falls a frame or two behind the finger, making
+    // the card visibly "catch up" in jumps rather than track it 1:1. flingOffset below is the
+    // suspend/spring side, used only once the finger lifts — for easing back to center when a drag
+    // doesn't cross the swipe threshold (the fling-out-of-screen animation lives in ExitingCard).
+    var dragOffset by remember(group.key) { mutableStateOf(Offset.Zero) }
+    val flingOffset = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
     val scale = remember(group.key) { Animatable(1f) }
     val zoomPan = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
     var zoomOrigin by remember(group.key) { mutableStateOf(TransformOrigin.Center) }
@@ -494,11 +508,12 @@ private fun DraggableCard(
             .size(cardWidth, cardHeight)
             .graphicsLayer {
                 transformOrigin = zoomOrigin
-                translationX = offset.value.x + zoomPan.value.x
-                translationY = offset.value.y + zoomPan.value.y
+                val renderOffset = dragOffset + flingOffset.value
+                translationX = renderOffset.x + zoomPan.value.x
+                translationY = renderOffset.y + zoomPan.value.y
                 applySwipeStyle(
                     animationStyle,
-                    offset.value,
+                    renderOffset,
                     thresholdPx,
                     baseScale = scale.value,
                     entranceAlpha = entranceAlpha.value,
@@ -507,16 +522,18 @@ private fun DraggableCard(
             .pointerInput(group.key) {
                 detectSwipeOrLongPressZoom(
                     onDrag = { dragAmount ->
-                        val newValue = offset.value + dragAmount
-                        scope.launch { offset.snapTo(newValue) }
-                        val crossed = abs(newValue.x) > thresholdPx || abs(newValue.y) > thresholdPx
+                        dragOffset += dragAmount
+                        val crossed = abs(dragOffset.x) > thresholdPx || abs(dragOffset.y) > thresholdPx
                         if (crossed != pastThreshold) {
                             pastThreshold = crossed
                             if (crossed) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         }
                     },
                     onDragEnd = {
-                        val current = offset.value
+                        // Includes any not-yet-settled flingOffset from a quick re-grab right after
+                        // a previous non-swipe release, so the spring-back below picks up exactly
+                        // where the card visually was instead of snapping to dragOffset alone.
+                        val current = dragOffset + flingOffset.value
                         val horizontalCrossed = abs(current.x) > thresholdPx
                         val verticalCrossed = abs(current.y) > thresholdPx
                         val direction = when {
@@ -531,7 +548,11 @@ private fun DraggableCard(
                             // independently as an overlay (see ExitingCard).
                             onSwiped(direction, current)
                         } else {
-                            scope.launch { offset.animateTo(Offset.Zero, SWIPE_SPRING) }
+                            dragOffset = Offset.Zero
+                            scope.launch {
+                                flingOffset.snapTo(current)
+                                flingOffset.animateTo(Offset.Zero, SWIPE_SPRING)
+                            }
                         }
                     },
                     onZoomStart = { origin ->
