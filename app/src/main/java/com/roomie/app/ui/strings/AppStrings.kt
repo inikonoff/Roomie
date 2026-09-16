@@ -44,6 +44,7 @@ interface AppStrings {
     val emptyTrash: String
     val emptyTrashConfirmTitle: String
     fun emptyTrashConfirmMessage(count: Int): String
+    fun deletingProgress(done: Int, total: Int): String
 
     // Settings screen
     val sectionAppearance: String
@@ -146,6 +147,7 @@ object EnglishStrings : AppStrings {
     override val emptyTrashConfirmTitle = "Empty trash?"
     override fun emptyTrashConfirmMessage(count: Int) =
         "This permanently deletes $count item${if (count == 1) "" else "s"}. This can't be undone."
+    override fun deletingProgress(done: Int, total: Int) = "Deleting… $done / $total"
 
     override val sectionAppearance = "Appearance"
     override val sectionCleanup = "Cleanup"
@@ -243,6 +245,7 @@ object RussianStrings : AppStrings {
     override val emptyTrashConfirmTitle = "Очистить корзину?"
     override fun emptyTrashConfirmMessage(count: Int) =
         "Будет безвозвратно удалено объектов: $count. Это нельзя отменить."
+    override fun deletingProgress(done: Int, total: Int) = "Удаление… $done из $total"
 
     override val sectionAppearance = "Оформление"
     override val sectionCleanup = "Очистка"

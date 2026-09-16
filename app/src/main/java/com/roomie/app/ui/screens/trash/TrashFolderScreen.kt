@@ -2,17 +2,21 @@ package com.roomie.app.ui.screens.trash
 
 import android.app.Activity
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -25,6 +29,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -65,9 +70,15 @@ fun TrashFolderScreen(
     onBack: () -> Unit,
 ) {
     val entries by viewModel.entries.collectAsState()
+    val deleteProgress by viewModel.deleteProgress.collectAsState()
     val strings = LocalAppStrings.current
     val context = LocalContext.current
     var showEmptyTrashConfirm by remember { mutableStateOf(false) }
+
+    // A permanent delete runs in the ViewModel's own coroutine scope — leaving this screen mid-
+    // delete would tear that down and abandon the loop with only some files actually removed, so
+    // block every way out (system back, top-bar back) until it finishes.
+    BackHandler(enabled = deleteProgress != null) {}
 
     // Same "wait for the real system result, not just launch() returning" pattern used for
     // trash/move requests elsewhere — launch() only starts the confirmation activity, it doesn't
@@ -122,13 +133,16 @@ fun TrashFolderScreen(
             TopAppBar(
                 title = { Text(strings.trashTitle(entries.size)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = onBack, enabled = deleteProgress == null) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = strings.back)
                     }
                 },
                 actions = {
                     if (entries.isNotEmpty()) {
-                        IconButton(onClick = { showEmptyTrashConfirm = true }) {
+                        IconButton(
+                            onClick = { showEmptyTrashConfirm = true },
+                            enabled = deleteProgress == null,
+                        ) {
                             Icon(Icons.Filled.DeleteForever, contentDescription = strings.emptyTrash)
                         }
                     }
@@ -136,24 +150,35 @@ fun TrashFolderScreen(
             )
         },
     ) { padding ->
-        if (entries.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text(strings.trashIsEmpty, style = MaterialTheme.typography.bodyLarge)
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(padding),
-            ) {
-                items(entries, key = { it.stableId }) { entry ->
-                    TrashEntryTile(
-                        strings = strings,
-                        entry = entry,
-                        onRestore = { viewModel.restore(entry) },
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            deleteProgress?.let { (done, total) ->
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                    LinearProgressIndicator(
+                        progress = { if (total > 0) done.toFloat() / total else 0f },
+                        modifier = Modifier.fillMaxWidth(),
                     )
+                    Text(strings.deletingProgress(done, total), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (entries.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
+                    Text(strings.trashIsEmpty, style = MaterialTheme.typography.bodyLarge)
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    contentPadding = PaddingValues(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    items(entries, key = { it.stableId }) { entry ->
+                        TrashEntryTile(
+                            strings = strings,
+                            entry = entry,
+                            onRestore = { viewModel.restore(entry) },
+                        )
+                    }
                 }
             }
         }

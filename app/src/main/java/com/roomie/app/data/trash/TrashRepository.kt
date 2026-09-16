@@ -116,9 +116,16 @@ class TrashRepository(
      * immediately instead of only ever waiting out the retention countdown. On API 30+, get a
      * confirmation [IntentSender] via [buildDeleteRequest] first; deleting straight away here is
      * only correct once that system dialog (if any) has already been confirmed.
+     *
+     * [onProgress] reports (done, total) after every single file — the caller uses it to show a
+     * live counter, since [deleteEntries] already commits each deletion to Room as it happens
+     * rather than batching them at the end.
      */
-    suspend fun permanentlyDelete(entries: List<TrashEntry>): CleanupResult = withContext(Dispatchers.IO) {
-        deleteEntries(entries)
+    suspend fun permanentlyDelete(
+        entries: List<TrashEntry>,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): CleanupResult = withContext(Dispatchers.IO) {
+        deleteEntries(entries, onProgress)
     }
 
     /**
@@ -170,9 +177,11 @@ class TrashRepository(
             false
         }
 
-    private suspend fun deleteEntries(entries: List<TrashEntry>): CleanupResult {
+    private suspend fun deleteEntries(
+        entries: List<TrashEntry>,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): CleanupResult {
         var freedBytes = 0L
-        val deletedIds = mutableListOf<String>()
         val affectedDirs = mutableSetOf<File>()
 
         for ((index, entry) in entries.withIndex()) {
@@ -188,15 +197,17 @@ class TrashRepository(
             CrashReporter.mark(context, "trash_delete:entry[$index/${entries.size}]:done:deleted=$deleted")
             if (deleted) {
                 freedBytes += entry.sizeBytes
-                deletedIds += entry.stableId
+                // Committed right away, one file at a time, instead of batched after the whole
+                // loop: observeTrash() emits immediately so the UI list shrinks live, and — just
+                // as importantly — anything already deleted here survives the ViewModel (and its
+                // viewModelScope coroutine) being torn down mid-delete, e.g. by leaving the screen
+                // or the process dying, instead of staying gone on disk but still listed in Room.
+                trashDao.deleteByIds(listOf(entry.stableId))
                 entry.filePath?.let { path -> File(path).parentFile?.let { affectedDirs += it } }
             }
+            onProgress(index + 1, entries.size)
         }
 
-        if (deletedIds.isNotEmpty()) {
-            trashDao.deleteByIds(deletedIds)
-            CrashReporter.mark(context, "trash_delete:room_cleaned:count=${deletedIds.size}")
-        }
         return CleanupResult(freedBytes, affectedDirs)
     }
 }

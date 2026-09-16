@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.roomie.app.data.db.TrashEntry
 import com.roomie.app.data.trash.TrashRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +37,13 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
      *  [onDeleteFlowCancelled] when the caller's launcher gets a non-OK result (e.g. cancelled). */
     private var deleteInFlight = false
 
+    /** (done, total) while a permanent delete is running, null otherwise — lets the screen show a
+     *  live counter and, more importantly, refuse to let the user navigate away mid-delete: since
+     *  the delete runs in [viewModelScope], leaving the screen would tear down this ViewModel and
+     *  abandon the loop partway through. */
+    private val _deleteProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val deleteProgress: StateFlow<Pair<Int, Int>?> = _deleteProgress
+
     fun restore(entry: TrashEntry) {
         viewModelScope.launch { trashRepository.restoreFromTrash(listOf(entry)) }
     }
@@ -53,11 +61,16 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
                 val (valid, intentSender) = trashRepository.buildDeleteRequest(entries)
                 if (intentSender != null) {
                     _deleteConfirmationEvents.emit(TrashDeleteRequest(intentSender, valid))
+                } else if (valid.isNotEmpty()) {
+                    _deleteProgress.value = 0 to valid.size
+                    trashRepository.permanentlyDelete(valid) { done, total -> _deleteProgress.value = done to total }
+                    _deleteProgress.value = null
+                    deleteInFlight = false
                 } else {
-                    if (valid.isNotEmpty()) trashRepository.permanentlyDelete(valid)
                     deleteInFlight = false
                 }
             } catch (e: Throwable) {
+                _deleteProgress.value = null
                 deleteInFlight = false
                 throw e
             }
@@ -67,7 +80,9 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
     /** Called once the system delete-confirmation dialog (API 30+) has been confirmed. */
     fun onDeleteConfirmed(entries: List<TrashEntry>) {
         viewModelScope.launch {
-            trashRepository.permanentlyDelete(entries)
+            _deleteProgress.value = 0 to entries.size
+            trashRepository.permanentlyDelete(entries) { done, total -> _deleteProgress.value = done to total }
+            _deleteProgress.value = null
             deleteInFlight = false
         }
     }
