@@ -17,6 +17,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
+import coil3.request.allowHardware
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -87,6 +88,12 @@ fun MediaThumbnail(
             model = ImageRequest.Builder(context)
                 .data(uri)
                 .size(GRID_THUMBNAIL_PX, GRID_THUMBNAIL_PX)
+                // Many short-lived tiles churn through a grid on every scroll. A HARDWARE bitmap
+                // (Coil's default on API 26+) is a GPU buffer allocated via gralloc IPC — cheap to
+                // keep around for one long-lived image, expensive to allocate/free at this rate
+                // (framestats showed ~5s GPU-time spikes and ~71MB of live AHardwareBuffers sized
+                // exactly like these thumbnails). Software ARGB_8888 is cheaper for this pattern.
+                .allowHardware(false)
                 .build(),
             contentDescription = contentDescription,
             contentScale = contentScale,
