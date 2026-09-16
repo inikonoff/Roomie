@@ -52,6 +52,10 @@ data class GalleryFolder(
     val displayName: String,
     val itemCount: Int,
     val coverUri: Uri?,
+    val coverIsVideo: Boolean = false,
+    /** Only used to find the single most-recent item across every folder, for the "All Photos"
+     *  tile's own cover — not otherwise surfaced in the UI. */
+    val coverDateTakenMillis: Long = 0L,
 )
 
 enum class PeriodFilter {

@@ -35,6 +35,8 @@ class MediaRepository(private val context: Context) {
                 displayName = items.first().bucketName,
                 itemCount = items.size,
                 coverUri = newestFirst?.uri,
+                coverIsVideo = newestFirst?.isVideo ?: false,
+                coverDateTakenMillis = newestFirst?.dateTakenMillis ?: 0L,
             )
         }.sortedByDescending { it.itemCount }
     }

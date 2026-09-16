@@ -40,12 +40,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import android.net.Uri
-import coil3.compose.AsyncImage
 import com.roomie.app.data.media.GalleryFolder
+import com.roomie.app.ui.components.MediaThumbnail
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.ContainerShape
@@ -165,9 +164,14 @@ private fun FolderGrid(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
+                // The most recently taken item across every folder — the global max is always one
+                // of the per-folder maxes already computed in getFolders(), so no extra query.
+                val newestOverall = folders.maxByOrNull { it.coverDateTakenMillis }
                 AllPhotosCard(
                     strings = strings,
                     totalCount = folders.sumOf { it.itemCount },
+                    coverUri = newestOverall?.coverUri,
+                    coverIsVideo = newestOverall?.coverIsVideo ?: false,
                     onClick = { onOpenFolder(null, strings.allPhotos) },
                 )
             }
@@ -186,11 +190,18 @@ private fun FolderGrid(
 }
 
 @Composable
-private fun AllPhotosCard(strings: AppStrings, totalCount: Int, onClick: () -> Unit) {
+private fun AllPhotosCard(
+    strings: AppStrings,
+    totalCount: Int,
+    coverUri: Uri?,
+    coverIsVideo: Boolean,
+    onClick: () -> Unit,
+) {
     FolderTile(
         title = strings.allPhotos,
         subtitle = strings.itemsCount(totalCount),
-        coverUri = null,
+        coverUri = coverUri,
+        coverIsVideo = coverIsVideo,
         icon = Icons.Filled.Photo,
         onClick = onClick,
     )
@@ -213,6 +224,7 @@ private fun FolderCard(folder: GalleryFolder, strings: AppStrings, onClick: () -
         title = folder.displayName,
         subtitle = strings.itemsCount(folder.itemCount),
         coverUri = folder.coverUri,
+        coverIsVideo = folder.coverIsVideo,
         icon = null,
         onClick = onClick,
     )
@@ -223,6 +235,7 @@ private fun FolderTile(
     title: String,
     subtitle: String,
     coverUri: Uri?,
+    coverIsVideo: Boolean = false,
     icon: ImageVector?,
     onClick: () -> Unit,
 ) {
@@ -240,10 +253,14 @@ private fun FolderTile(
             contentAlignment = Alignment.Center,
         ) {
             when {
-                coverUri != null -> AsyncImage(
-                    model = coverUri,
+                // Explicit target size via MediaThumbnail instead of a bare AsyncImage — without
+                // it Coil has to infer a size from this Box's own layout constraints, which isn't
+                // reliable under a LazyVerticalGrid cell and commonly falls back to decoding the
+                // source's full camera resolution, only to have the GPU downscale it at draw time.
+                coverUri != null -> MediaThumbnail(
+                    uri = coverUri,
+                    isVideo = coverIsVideo,
                     contentDescription = title,
-                    contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
                 icon != null -> Icon(

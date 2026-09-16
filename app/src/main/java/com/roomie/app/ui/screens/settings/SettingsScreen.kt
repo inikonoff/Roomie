@@ -12,14 +12,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -47,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -101,16 +108,46 @@ fun SettingsScreen(
                 .padding(16.dp),
         ) {
             SettingsCard {
-                SectionTitle(strings.sectionAppearance)
+                SectionTitle(strings.sectionGestures)
 
-                SubsectionTitle(strings.sectionTheme)
-                ThemeModeSelector(strings, settings.themeMode, viewModel::setThemeMode)
+                SubsectionTitle(strings.sectionSwipeGestures)
+                val preset = SwipeGesturePreset.matching(settings)
+                GesturePresetRow(
+                    strings = strings,
+                    selected = preset,
+                    onPresetSelected = viewModel::applyGesturePreset,
+                )
+                PresetDescription(strings, preset)
 
-                SubsectionTitle(strings.sectionLanguage)
-                LanguageModeSelector(strings, settings.languageMode, viewModel::setLanguageMode)
-
-                SubsectionTitle(strings.sectionCardAnimation)
-                CardAnimationStyleSelector(strings, settings.cardAnimationStyle, viewModel::setCardAnimationStyle)
+                SwipeActionRow(
+                    strings.swipeRight,
+                    Icons.Filled.ArrowForward,
+                    strings,
+                    settings.swipeRightAction,
+                    viewModel::setSwipeRightAction,
+                )
+                SwipeActionRow(
+                    strings.swipeLeft,
+                    Icons.Filled.ArrowBack,
+                    strings,
+                    settings.swipeLeftAction,
+                    viewModel::setSwipeLeftAction,
+                )
+                SwipeActionRow(
+                    strings.swipeUp,
+                    Icons.Filled.ArrowUpward,
+                    strings,
+                    settings.swipeUpAction,
+                    viewModel::setSwipeUpAction,
+                )
+                SwipeActionRow(
+                    strings.swipeDown,
+                    Icons.Filled.ArrowDownward,
+                    strings,
+                    settings.swipeDownAction,
+                    viewModel::setSwipeDownAction,
+                )
+                MoveToFolderRow(strings, settings.moveToFolderName, folders, viewModel::setMoveToFolder)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -133,22 +170,16 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             SettingsCard {
-                SectionTitle(strings.sectionGestures)
+                SectionTitle(strings.sectionAppearance)
 
-                SubsectionTitle(strings.sectionSwipeGestures)
-                val preset = SwipeGesturePreset.matching(settings)
-                GesturePresetRow(
-                    strings = strings,
-                    selected = preset,
-                    onPresetSelected = viewModel::applyGesturePreset,
-                )
-                PresetDescription(strings, preset)
+                SubsectionTitle(strings.sectionTheme)
+                ThemeModeSelector(strings, settings.themeMode, viewModel::setThemeMode)
 
-                SwipeActionRow(strings.swipeRight, strings, settings.swipeRightAction, viewModel::setSwipeRightAction)
-                SwipeActionRow(strings.swipeLeft, strings, settings.swipeLeftAction, viewModel::setSwipeLeftAction)
-                SwipeActionRow(strings.swipeUp, strings, settings.swipeUpAction, viewModel::setSwipeUpAction)
-                SwipeActionRow(strings.swipeDown, strings, settings.swipeDownAction, viewModel::setSwipeDownAction)
-                MoveToFolderRow(strings, settings.moveToFolderName, folders, viewModel::setMoveToFolder)
+                SubsectionTitle(strings.sectionLanguage)
+                LanguageModeSelector(strings, settings.languageMode, viewModel::setLanguageMode)
+
+                SubsectionTitle(strings.sectionCardAnimation)
+                CardAnimationStyleSelector(strings, settings.cardAnimationStyle, viewModel::setCardAnimationStyle)
             }
         }
     }
@@ -270,11 +301,19 @@ private fun SortOrderSelector(strings: AppStrings, current: SortOrder, onSelecte
 private fun RetentionSelector(strings: AppStrings, currentDays: Int, onSelected: (Int) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        LabelValueRow(
-            label = strings.sectionTrashRetention,
-            value = strings.retentionDays(currentDays),
-            modifier = Modifier.clickable { expanded = true },
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LabelValueRow(
+                label = strings.sectionTrashRetention,
+                value = strings.retentionDays(currentDays),
+                modifier = Modifier.weight(1f),
+            )
+            ChevronIcon()
+        }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             RoomieSettings.ALLOWED_RETENTION_DAYS.forEach { days ->
                 DropdownMenuItem(
@@ -426,9 +465,42 @@ private fun LabelValueRow(
     }
 }
 
+/** Small circular badge for a swipe direction's arrow, giving each [SwipeActionRow] a glanceable
+ *  icon instead of starting straight into text. */
+@Composable
+private fun DirectionIcon(icon: ImageVector, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** Signals "tap to choose" on every row that opens a [DropdownMenu] or [AlertDialog] — rows that
+ *  don't (segmented buttons, [SwitchRow]) don't get one. */
+@Composable
+private fun ChevronIcon() {
+    Icon(
+        Icons.Filled.ChevronRight,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(20.dp),
+    )
+}
+
 @Composable
 private fun SwipeActionRow(
     label: String,
+    directionIcon: ImageVector,
     strings: AppStrings,
     current: SwipeCardAction,
     onSelected: (SwipeCardAction) -> Unit,
@@ -442,6 +514,8 @@ private fun SwipeActionRow(
                 .padding(vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            DirectionIcon(directionIcon)
+            Spacer(modifier = Modifier.width(12.dp))
             Text(
                 label,
                 style = MaterialTheme.typography.bodyLarge,
@@ -455,6 +529,8 @@ private fun SwipeActionRow(
                 chipColor = current.chipColor(),
                 containerColor = current.containerColor(),
             )
+            Spacer(modifier = Modifier.width(4.dp))
+            ChevronIcon()
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             SwipeCardAction.entries.forEach { action ->
@@ -498,11 +574,19 @@ private fun MoveToFolderRow(
     onSelected: (GalleryFolder) -> Unit,
 ) {
     var showDialog by remember { mutableStateOf(false) }
-    LabelValueRow(
-        label = strings.moveToFolderDestination,
-        value = currentName ?: strings.notSet,
-        modifier = Modifier.clickable { showDialog = true },
-    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showDialog = true },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LabelValueRow(
+            label = strings.moveToFolderDestination,
+            value = currentName ?: strings.notSet,
+            modifier = Modifier.weight(1f),
+        )
+        ChevronIcon()
+    }
 
     if (showDialog) {
         AlertDialog(
