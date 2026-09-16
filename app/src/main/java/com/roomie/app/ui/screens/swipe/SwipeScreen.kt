@@ -100,6 +100,7 @@ fun SwipeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val strings = LocalAppStrings.current
+    val haptic = LocalHapticFeedback.current
 
     LaunchedEffect(uiState.hasReachedLimit) {
         if (uiState.hasReachedLimit) onLimitReached()
@@ -107,6 +108,12 @@ fun SwipeScreen(
 
     LaunchedEffect(uiState.isStackExhausted, uiState.isLoading) {
         if (!uiState.isLoading && uiState.isStackExhausted) onStackExhausted()
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.browseHistoryExhaustedEvents.collect {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
     }
 
     Scaffold(

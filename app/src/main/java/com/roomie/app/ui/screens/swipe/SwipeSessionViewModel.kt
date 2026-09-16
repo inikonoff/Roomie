@@ -78,6 +78,12 @@ class SwipeSessionViewModel(
     private val _moveConfirmationEvents = MutableSharedFlow<MoveConfirmationRequest>()
     val moveConfirmationEvents: SharedFlow<MoveConfirmationRequest> = _moveConfirmationEvents
 
+    /** Fired when a Browse left-swipe (go back) has nothing left in [browseHistory] to return to —
+     *  SwipeScreen turns this into the same light haptic click already used for a swipe crossing
+     *  its threshold, as a "you've hit the start" cue instead of silently doing nothing. */
+    private val _browseHistoryExhaustedEvents = MutableSharedFlow<Unit>()
+    val browseHistoryExhaustedEvents: SharedFlow<Unit> = _browseHistoryExhaustedEvents
+
     private val undoHistory = ArrayDeque<SwipeAction>(MAX_UNDO_HISTORY)
 
     /** Cards passed with a "do nothing" (browsing) swipe, so a left-swipe-to-go-back has something
@@ -173,14 +179,19 @@ class SwipeSessionViewModel(
         val action = actionFor(direction)
 
         // Plain browsing (no decision either way): left goes back to what you just saw instead of
-        // just advancing like every other direction/action does. Falls through to a normal forward
-        // advance if there's nothing to go back to yet, so the gesture never just does nothing.
+        // advancing like every other direction/action does. Unconditionally returns either way —
+        // falling through to the forward-advance code below when there's nothing to go back to was
+        // the bug: it counted as a "do nothing" swipe on the *current* card, pushing it onto
+        // browseHistory and advancing past it, so the very next left-swipe pulled that same card
+        // right back — an A/B loop instead of just stopping at the start of the session.
         if (direction == SwipeDirection.LEFT && action == SwipeCardAction.NONE) {
             val previous = browseHistory.removeLastOrNull()
             if (previous != null) {
                 _uiState.update { it.copy(stack = listOf(previous) + it.stack, isStackExhausted = false) }
-                return
+            } else {
+                viewModelScope.launch { _browseHistoryExhaustedEvents.emit(Unit) }
             }
+            return
         }
 
         when (action) {
