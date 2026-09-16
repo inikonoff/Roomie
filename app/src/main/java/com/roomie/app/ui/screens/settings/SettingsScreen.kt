@@ -51,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -64,6 +65,7 @@ import com.roomie.app.data.settings.LanguageMode
 import com.roomie.app.data.settings.RoomieSettings
 import com.roomie.app.data.settings.SwipeCardAction
 import com.roomie.app.data.settings.ThemeMode
+import com.roomie.app.ui.screens.swipe.SwipeDirection
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.ContainerShape
@@ -119,12 +121,20 @@ fun SettingsScreen(
                 )
                 PresetDescription(strings, preset)
 
+                // Left/Right are what define a preset (see SwipeGesturePreset.matching) — letting
+                // them be edited independently is exactly what made the Classic/Browse segmented
+                // buttons lose their highlight after a manual tweak, since the settings no longer
+                // matched either preset. Locking them while a preset is active keeps `preset`
+                // (and so the highlight) always in sync with what's actually configured.
+                val leftRightLocked = preset != null
                 SwipeActionRow(
                     strings.swipeRight,
                     Icons.Filled.ArrowForward,
                     strings,
                     settings.swipeRightAction,
                     viewModel::setSwipeRightAction,
+                    direction = SwipeDirection.RIGHT,
+                    enabled = !leftRightLocked,
                 )
                 SwipeActionRow(
                     strings.swipeLeft,
@@ -132,6 +142,8 @@ fun SettingsScreen(
                     strings,
                     settings.swipeLeftAction,
                     viewModel::setSwipeLeftAction,
+                    direction = SwipeDirection.LEFT,
+                    enabled = !leftRightLocked,
                 )
                 SwipeActionRow(
                     strings.swipeUp,
@@ -328,12 +340,16 @@ private fun RetentionSelector(strings: AppStrings, currentDays: Int, onSelected:
     }
 }
 
-private fun SwipeCardAction.label(strings: AppStrings): String = when (this) {
+/** [direction] only matters for [SwipeCardAction.NONE]: in Browse mode a left swipe with no
+ *  configured action actually steps back to the previous photo (see
+ *  [com.roomie.app.ui.screens.swipe.SwipeSessionViewModel]'s browse history), so "Do nothing" is
+ *  misleading specifically there — every other action's label is direction-independent. */
+private fun SwipeCardAction.label(strings: AppStrings, direction: SwipeDirection? = null): String = when (this) {
+    SwipeCardAction.NONE -> if (direction == SwipeDirection.LEFT) strings.actionPreviousPhoto else strings.actionNone
     SwipeCardAction.DELETE -> strings.actionDelete
     SwipeCardAction.KEEP -> strings.actionKeep
     SwipeCardAction.MOVE_TO_FOLDER -> strings.actionMoveToFolder
     SwipeCardAction.POSTPONE -> strings.actionPostpone
-    SwipeCardAction.NONE -> strings.actionNone
 }
 
 /** Each action gets its own recognizable color, matching the swipe-card chip it corresponds to,
@@ -437,12 +453,14 @@ private fun LabelValueRow(
     label: String,
     value: String,
     valueColor: Color = MaterialTheme.colorScheme.secondary,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 10.dp),
+            .padding(vertical = 10.dp)
+            .alpha(if (enabled) 1f else 0.4f),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -504,14 +522,17 @@ private fun SwipeActionRow(
     strings: AppStrings,
     current: SwipeCardAction,
     onSelected: (SwipeCardAction) -> Unit,
+    direction: SwipeDirection? = null,
+    enabled: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = true }
-                .padding(vertical = 10.dp),
+                .let { if (enabled) it.clickable { expanded = true } else it }
+                .padding(vertical = 10.dp)
+                .alpha(if (enabled) 1f else 0.4f),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             DirectionIcon(directionIcon)
@@ -525,22 +546,28 @@ private fun SwipeActionRow(
             )
             Spacer(modifier = Modifier.width(8.dp))
             ActionChip(
-                text = current.label(strings),
+                text = current.label(strings, direction),
                 chipColor = current.chipColor(),
                 containerColor = current.containerColor(),
             )
-            Spacer(modifier = Modifier.width(4.dp))
-            ChevronIcon()
+            if (enabled) {
+                Spacer(modifier = Modifier.width(4.dp))
+                ChevronIcon()
+            }
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            SwipeCardAction.entries.forEach { action ->
-                DropdownMenuItem(
-                    text = { Text(action.label(strings)) },
-                    onClick = {
-                        onSelected(action)
-                        expanded = false
-                    },
-                )
+        // Locked (enabled = false) rows keep their current value visible via the chip above, but
+        // can't open this menu at all — the value is only ever changed by picking a preset.
+        if (enabled) {
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                SwipeCardAction.entries.forEach { action ->
+                    DropdownMenuItem(
+                        text = { Text(action.label(strings, direction)) },
+                        onClick = {
+                            onSelected(action)
+                            expanded = false
+                        },
+                    )
+                }
             }
         }
     }

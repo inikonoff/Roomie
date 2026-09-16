@@ -21,6 +21,14 @@ private val LightColors = lightColorScheme(
     outline = Outline,
     secondaryContainer = SelectedContainer,
     onSecondaryContainer = OnSelectedContainer,
+    // DropdownMenu paints its own background from these roles, not from `surface` — left unset,
+    // Compose falls back to Material3's base scheme (lavender), the same failure mode the
+    // selected SegmentedButton had before phase 1 explicitly set secondaryContainer.
+    surfaceContainerLowest = Background,
+    surfaceContainerLow = Surface,
+    surfaceContainer = Surface,
+    surfaceContainerHigh = SurfaceMuted,
+    surfaceContainerHighest = SurfaceMuted,
     error = SwipeLeftDelete,
 )
 
@@ -36,6 +44,11 @@ private val DarkColors = darkColorScheme(
     outline = Color(0xFF3F372F),
     secondaryContainer = Color(0xFF4A362C),
     onSecondaryContainer = Color(0xFFF0D0C8),
+    surfaceContainerLowest = Color(0xFF1C1815),
+    surfaceContainerLow = Color(0xFF2A241F),
+    surfaceContainer = Color(0xFF2A241F),
+    surfaceContainerHigh = Color(0xFF352D26),
+    surfaceContainerHighest = Color(0xFF352D26),
     error = SwipeLeftDelete,
 )
 

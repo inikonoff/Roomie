@@ -81,6 +81,7 @@ interface AppStrings {
     val actionMoveToFolder: String
     val actionPostpone: String
     val actionNone: String
+    val actionPreviousPhoto: String
     val moveToFolderDestination: String
     val notSet: String
     val chooseAFolder: String
@@ -183,6 +184,7 @@ object EnglishStrings : AppStrings {
     override val actionMoveToFolder = "Move to folder"
     override val actionPostpone = "Postpone (later this session)"
     override val actionNone = "Do nothing"
+    override val actionPreviousPhoto = "Previous photo"
     override val moveToFolderDestination = "\"Move to folder\" destination"
     override val notSet = "Not set"
     override val chooseAFolder = "Choose a folder"
@@ -283,6 +285,7 @@ object RussianStrings : AppStrings {
     override val actionMoveToFolder = "Переместить в папку"
     override val actionPostpone = "Отложить (до конца сессии)"
     override val actionNone = "Ничего не делать"
+    override val actionPreviousPhoto = "Предыдущее фото"
     override val moveToFolderDestination = "Папка для «Переместить в папку»"
     override val notSet = "Не задано"
     override val chooseAFolder = "Выберите папку"
