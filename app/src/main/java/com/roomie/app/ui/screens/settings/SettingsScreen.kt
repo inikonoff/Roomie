@@ -43,6 +43,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -94,6 +95,7 @@ fun SettingsScreen(
         topBar = {
             TopAppBar(
                 title = { Text(strings.settingsTitle) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = strings.back)
@@ -145,12 +147,22 @@ fun SettingsScreen(
                     direction = SwipeDirection.LEFT,
                     enabled = !leftRightLocked,
                 )
+                // Classic already uses Delete/Keep on left/right — offering them again for up/down
+                // would let the same action end up assigned to more than one direction, which reads
+                // as a configuration mistake more than a real choice. Browse doesn't have this
+                // concern (its up/down defaults are Delete/Postpone, left/right are both NONE).
+                val upDownExcluded = if (preset == SwipeGesturePreset.CLASSIC) {
+                    setOf(SwipeCardAction.DELETE, SwipeCardAction.KEEP)
+                } else {
+                    emptySet()
+                }
                 SwipeActionRow(
                     strings.swipeUp,
                     Icons.Filled.ArrowUpward,
                     strings,
                     settings.swipeUpAction,
                     viewModel::setSwipeUpAction,
+                    excludedActions = upDownExcluded,
                 )
                 SwipeActionRow(
                     strings.swipeDown,
@@ -158,6 +170,7 @@ fun SettingsScreen(
                     strings,
                     settings.swipeDownAction,
                     viewModel::setSwipeDownAction,
+                    excludedActions = upDownExcluded,
                 )
                 MoveToFolderRow(strings, settings.moveToFolderName, folders, viewModel::setMoveToFolder)
             }
@@ -340,12 +353,16 @@ private fun RetentionSelector(strings: AppStrings, currentDays: Int, onSelected:
     }
 }
 
-/** [direction] only matters for [SwipeCardAction.NONE]: in Browse mode a left swipe with no
- *  configured action actually steps back to the previous photo (see
- *  [com.roomie.app.ui.screens.swipe.SwipeSessionViewModel]'s browse history), so "Do nothing" is
- *  misleading specifically there — every other action's label is direction-independent. */
+/** [direction] only matters for [SwipeCardAction.NONE]: in Browse mode, a left swipe with no
+ *  configured action steps back to the previous photo and a right swipe advances to the next one
+ *  (see [com.roomie.app.ui.screens.swipe.SwipeSessionViewModel]'s browse history) — "Do nothing"
+ *  is misleading for either; every other action's label is direction-independent. */
 private fun SwipeCardAction.label(strings: AppStrings, direction: SwipeDirection? = null): String = when (this) {
-    SwipeCardAction.NONE -> if (direction == SwipeDirection.LEFT) strings.actionPreviousPhoto else strings.actionNone
+    SwipeCardAction.NONE -> when (direction) {
+        SwipeDirection.LEFT -> strings.actionPreviousPhoto
+        SwipeDirection.RIGHT -> strings.actionNextPhoto
+        else -> strings.actionNone
+    }
     SwipeCardAction.DELETE -> strings.actionDelete
     SwipeCardAction.KEEP -> strings.actionKeep
     SwipeCardAction.MOVE_TO_FOLDER -> strings.actionMoveToFolder
@@ -524,6 +541,7 @@ private fun SwipeActionRow(
     onSelected: (SwipeCardAction) -> Unit,
     direction: SwipeDirection? = null,
     enabled: Boolean = true,
+    excludedActions: Set<SwipeCardAction> = emptySet(),
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -559,7 +577,7 @@ private fun SwipeActionRow(
         // can't open this menu at all — the value is only ever changed by picking a preset.
         if (enabled) {
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                SwipeCardAction.entries.forEach { action ->
+                SwipeCardAction.entries.filterNot { it in excludedActions }.forEach { action ->
                     DropdownMenuItem(
                         text = { Text(action.label(strings, direction)) },
                         onClick = {

@@ -38,7 +38,7 @@ private const val GRID_THUMBNAIL_PX = 320
  * frame-extraction decode every single time, which is what was making video-heavy folders lag and
  * leave tiles blank — the grid was re-decoding faster than it could keep up with scrolling.
  */
-private val videoThumbnailCache = LruCache<String, Bitmap>(64)
+private val videoThumbnailCache = LruCache<String, Bitmap>(300)
 
 /**
  * Grid-safe thumbnail for a gallery item. Photos go through Coil as before, but videos use

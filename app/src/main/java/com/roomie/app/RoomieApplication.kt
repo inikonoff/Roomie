@@ -5,6 +5,7 @@ import android.content.Context
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
+import coil3.memory.MemoryCache
 import coil3.request.crossfade
 import coil3.video.VideoFrameDecoder
 import com.roomie.app.work.TrashCleanupWorker
@@ -37,10 +38,17 @@ class RoomieApplication : Application(), SingletonImageLoader.Factory {
 
     /** Registers the video-frame decoder as a fallback for video covers on API < 29 (see
      *  [com.roomie.app.ui.components.MediaThumbnail]), and enables downsampling-friendly defaults
-     *  to avoid OOM on large photos. */
+     *  to avoid OOM on large photos. An explicit memory cache (left unset, Coil still has one, but
+     *  a much smaller default) is what actually makes scrolling back over recently-seen thumbnails
+     *  feel instant instead of re-decoding them. */
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
             .components { add(VideoFrameDecoder.Factory()) }
+            .memoryCache {
+                MemoryCache.Builder()
+                    .maxSizePercent(context, 0.25)
+                    .build()
+            }
             .crossfade(true)
             .build()
 }
