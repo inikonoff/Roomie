@@ -69,6 +69,7 @@ import coil3.imageLoader
 import coil3.request.ImageRequest
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.data.settings.CardAnimationStyle
+import com.roomie.app.ui.screens.settings.label
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.SwipeLeftDelete
@@ -119,7 +120,18 @@ fun SwipeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(uiState.folderName) },
+                title = {
+                    Column {
+                        Text(uiState.folderName, style = MaterialTheme.typography.titleLarge)
+                        uiState.gesturePreset?.let {
+                            Text(
+                                it.label(strings),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -128,8 +140,8 @@ fun SwipeScreen(
                 },
                 actions = {
                     IconButton(onClick = onOpenTrash) {
-                        if (uiState.deletedCount > 0) {
-                            BadgedBox(badge = { Badge { Text(uiState.deletedCount.toString()) } }) {
+                        if (uiState.trashedCount > 0) {
+                            BadgedBox(badge = { Badge { Text(uiState.trashedCount.toString()) } }) {
                                 Icon(Icons.Filled.Delete, contentDescription = strings.reviewTrash)
                             }
                         } else {

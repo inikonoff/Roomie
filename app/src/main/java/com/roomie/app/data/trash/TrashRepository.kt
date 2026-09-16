@@ -44,6 +44,10 @@ class TrashRepository(
         trashDao.getAllStableIds().toSet()
     }
 
+    /** Live count of everything currently sitting in the trash, independent of any particular
+     *  swipe session — backs the trash icon's badge on the swipe screen. */
+    fun observeTrashedCount(): Flow<Int> = trashDao.observeCount()
+
     /** Un-trashes [entries]: clears MediaStore's own IS_TRASHED flag (Q+, no consent needed to
      *  un-hide something the user still owns) and drops our retention bookkeeping. Best-effort —
      *  an entry whose underlying file already vanished just stays removed from Room. */

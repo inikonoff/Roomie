@@ -34,36 +34,42 @@ class FolderGridViewModel(
     val uiState: StateFlow<FolderGridUiState> = _uiState.asStateFlow()
 
     // Navigation Compose recreates this screen's composition on every return to it, re-firing
-    // LaunchedEffect(bucketId, displayName) → load() even for the same folder — without this guard
-    // that unconditionally reloaded and reset isLoading, unmounting the grid to a spinner and back,
-    // scrolled to the top. Same class of bug already fixed for the swipe screen via
-    // loadedSessionKey. A real forced reload (e.g. after files change) would need to bypass this
-    // guard and call loadWithPeriod directly — no such call site exists yet.
+    // LaunchedEffect(bucketId, displayName) → load() even for the same folder. Reloading the full
+    // (expensive) media query unconditionally on every such re-entry unmounted the grid to a
+    // spinner and back, scrolled to the top — so it's still guarded by loadedKey. But comparing
+    // only the key meant a Trash visit mid-session (delete/empty, still the same folder) never
+    // refreshed the grid at all: it stayed on the item list from the first load, showing tiles for
+    // files that no longer existed. loadedTrashedIds is checked on every re-entry (a cheap Room
+    // query) specifically to catch that case and trigger the expensive reload only when the trash
+    // set actually changed.
     private var loadedKey: String? = null
+    private var loadedTrashedIds: Set<String> = emptySet()
 
     fun load(bucketId: Long?, displayName: String) {
         val key = "$bucketId|$displayName"
-        if (key == loadedKey) return
-        loadedKey = key
         viewModelScope.launch {
+            val currentTrashedIds = trashRepository.getTrashedStableIds()
+            if (key == loadedKey && currentTrashedIds == loadedTrashedIds) return@launch
+            loadedKey = key
+            loadedTrashedIds = currentTrashedIds
             val savedPeriod = settingsRepository.getFolderPeriodFilter(bucketId)
-            loadWithPeriod(bucketId, savedPeriod)
+            loadWithPeriod(bucketId, savedPeriod, currentTrashedIds)
         }
     }
 
     fun onPeriodSelected(bucketId: Long?, period: PeriodFilter) {
         viewModelScope.launch {
             settingsRepository.setFolderPeriodFilter(bucketId, period)
-            loadWithPeriod(bucketId, period)
+            loadedTrashedIds = trashRepository.getTrashedStableIds()
+            loadWithPeriod(bucketId, period, loadedTrashedIds)
         }
     }
 
-    private suspend fun loadWithPeriod(bucketId: Long?, period: PeriodFilter) {
+    private suspend fun loadWithPeriod(bucketId: Long?, period: PeriodFilter, trashedIds: Set<String>) {
         _uiState.update { it.copy(isLoading = true, period = period) }
         val sortOrder = settingsRepository.settings.first().sortOrder
         // A swipe-deleted photo stays on disk until the trash is emptied, so it must be
         // excluded here too or it would still show up when browsing the folder grid.
-        val trashedIds = trashRepository.getTrashedStableIds()
         val groups = mediaRepository.getMediaGroups(bucketId, period, sortOrder)
             .filterNot { group -> group.items.any { it.stableId in trashedIds } }
         _uiState.update { it.copy(groups = groups, isLoading = false) }

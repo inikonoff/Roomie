@@ -26,4 +26,7 @@ interface TrashDao {
 
     @Query("SELECT COUNT(*) FROM trash_entries")
     suspend fun count(): Int
+
+    @Query("SELECT COUNT(*) FROM trash_entries")
+    fun observeCount(): Flow<Int>
 }

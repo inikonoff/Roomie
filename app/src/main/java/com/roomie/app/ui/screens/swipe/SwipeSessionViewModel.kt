@@ -14,6 +14,7 @@ import com.roomie.app.data.settings.RoomieSettings
 import com.roomie.app.data.settings.SettingsRepository
 import com.roomie.app.data.settings.SwipeCardAction
 import com.roomie.app.data.trash.TrashRepository
+import com.roomie.app.ui.screens.settings.SwipeGesturePreset
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +52,14 @@ data class SwipeUiState(
     val keptCount: Int = 0,
     val postponedCount: Int = 0,
     val monetizationEnabled: Boolean = false,
+    /** Live count of everything currently in the trash, independent of this session — see
+     *  [com.roomie.app.data.trash.TrashRepository.observeTrashedCount]. Distinct from
+     *  [deletedCount], which is scoped to just this swipe session for the progress bar/summary. */
+    val trashedCount: Int = 0,
+    /** Which gesture preset (if any) the current swipe settings match, shown as a subtitle on this
+     *  screen so the active mode is visible without opening Settings. Null under a custom (mixed)
+     *  configuration that matches neither preset. */
+    val gesturePreset: SwipeGesturePreset? = null,
 ) {
     val currentGroup: MediaGroup? get() = stack.firstOrNull()
 
@@ -116,8 +125,14 @@ class SwipeSessionViewModel(
                         hasReachedLimit = settings.hasReachedSwipeLimit,
                         cardAnimationStyle = settings.cardAnimationStyle,
                         monetizationEnabled = settings.monetizationEnabled,
+                        gesturePreset = SwipeGesturePreset.matching(settings),
                     )
                 }
+            }
+        }
+        viewModelScope.launch {
+            trashRepository.observeTrashedCount().collectLatest { count ->
+                _uiState.update { it.copy(trashedCount = count) }
             }
         }
     }

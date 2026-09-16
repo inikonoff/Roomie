@@ -11,6 +11,7 @@ import com.roomie.app.data.settings.RoomieSettings
 import com.roomie.app.data.settings.SettingsRepository
 import com.roomie.app.data.settings.SwipeCardAction
 import com.roomie.app.data.settings.ThemeMode
+import com.roomie.app.ui.strings.AppStrings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -119,4 +120,11 @@ enum class SwipeGesturePreset(
             it.left == settings.swipeLeftAction && it.right == settings.swipeRightAction
         }
     }
+}
+
+/** Public (not SettingsScreen-private) so SwipeScreen can show the active preset's name as a
+ *  subtitle without duplicating this mapping. */
+fun SwipeGesturePreset.label(strings: AppStrings): String = when (this) {
+    SwipeGesturePreset.CLASSIC -> strings.presetClassic
+    SwipeGesturePreset.BROWSE_AND_DELETE -> strings.presetBrowseDeleteUp
 }

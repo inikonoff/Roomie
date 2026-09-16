@@ -24,7 +24,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteForever
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,7 +31,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -73,7 +71,6 @@ fun TrashFolderScreen(
     val deleteProgress by viewModel.deleteProgress.collectAsState()
     val strings = LocalAppStrings.current
     val context = LocalContext.current
-    var showEmptyTrashConfirm by remember { mutableStateOf(false) }
 
     // A permanent delete runs in the ViewModel's own coroutine scope — leaving this screen mid-
     // delete would tear that down and abandon the loop with only some files actually removed, so
@@ -141,7 +138,7 @@ fun TrashFolderScreen(
                 actions = {
                     if (entries.isNotEmpty()) {
                         IconButton(
-                            onClick = { showEmptyTrashConfirm = true },
+                            onClick = { viewModel.requestDeleteForever(entries) },
                             enabled = deleteProgress == null,
                         ) {
                             Icon(Icons.Filled.DeleteForever, contentDescription = strings.emptyTrash)
@@ -183,25 +180,6 @@ fun TrashFolderScreen(
                 }
             }
         }
-    }
-
-    if (showEmptyTrashConfirm) {
-        AlertDialog(
-            onDismissRequest = { showEmptyTrashConfirm = false },
-            title = { Text(strings.emptyTrashConfirmTitle) },
-            text = { Text(strings.emptyTrashConfirmMessage(entries.size)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showEmptyTrashConfirm = false
-                        viewModel.requestDeleteForever(entries)
-                    },
-                ) { Text(strings.deleteForever) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showEmptyTrashConfirm = false }) { Text(strings.cancel) }
-            },
-        )
     }
 }
 

@@ -16,6 +16,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.size.Size
 import com.roomie.app.data.media.MediaGroup
@@ -47,6 +49,25 @@ fun SwipeCard(
     // Resets to the thumbnail whenever the card changes, so a new photo/video never inherits the
     // previous one's "currently playing" state.
     var isPlayingVideo by remember(group.key) { mutableStateOf(false) }
+
+    // The normal (unzoomed) view only requests a screen-sized image — fast, but it means the
+    // source's own full resolution isn't in Coil's cache yet when a long-press zoom actually asks
+    // for it, so the first zoom on a freshly-arrived card visibly waits on a decode. Warm that
+    // cache in the background, once, while the card is just sitting there unzoomed and on screen —
+    // by the time a real long-press happens it's very likely already done. Fire-and-forget: if the
+    // card gets swiped away before this finishes, the LaunchedEffect (and the coroutine it started)
+    // is simply cancelled along with it, no cleanup needed.
+    val prefetchContext = LocalContext.current
+    LaunchedEffect(group.cover.uri, isZoomed) {
+        if (!isZoomed && !group.cover.isVideo) {
+            prefetchContext.imageLoader.enqueue(
+                ImageRequest.Builder(prefetchContext)
+                    .data(group.cover.uri)
+                    .size(Size.ORIGINAL)
+                    .build(),
+            )
+        }
+    }
 
     BoxWithConstraints(
         modifier = modifier

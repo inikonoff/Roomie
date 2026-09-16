@@ -395,11 +395,6 @@ private fun CardAnimationStyle.label(strings: AppStrings): String = when (this) 
     CardAnimationStyle.SHRINK -> strings.animationShrink
 }
 
-private fun SwipeGesturePreset.label(strings: AppStrings): String = when (this) {
-    SwipeGesturePreset.CLASSIC -> strings.presetClassic
-    SwipeGesturePreset.BROWSE_AND_DELETE -> strings.presetBrowseDeleteUp
-}
-
 private fun SwipeGesturePreset?.description(strings: AppStrings): String? = when (this) {
     SwipeGesturePreset.CLASSIC -> strings.presetClassicDescription
     SwipeGesturePreset.BROWSE_AND_DELETE -> strings.presetBrowseDescription
