@@ -573,14 +573,16 @@ private fun DraggableCard(
                         val maxPanX = cardWidthPx * (scale.value - 1f) / 2f
                         val maxPanY = cardHeightPx * (scale.value - 1f) / 2f
                         val newPan = zoomPan.value + delta
-                        scope.launch {
-                            zoomPan.snapTo(
-                                Offset(
-                                    newPan.x.coerceIn(-maxPanX, maxPanX),
-                                    newPan.y.coerceIn(-maxPanY, maxPanY),
-                                ),
-                            )
-                        }
+                        // No scope.launch here — this callback already runs inside the gesture's
+                        // own suspend loop (detectSwipeOrLongPressZoom), so a direct snapTo applies
+                        // immediately instead of queuing a fresh coroutine per pointer-move event
+                        // (the same fix already applied to the plain drag via dragOffset).
+                        zoomPan.snapTo(
+                            Offset(
+                                newPan.x.coerceIn(-maxPanX, maxPanX),
+                                newPan.y.coerceIn(-maxPanY, maxPanY),
+                            ),
+                        )
                     },
                     onZoomEnd = {
                         // A quick peek, not a decision: as soon as the finger lifts, the photo
@@ -608,7 +610,7 @@ private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
     onDrag: (Offset) -> Unit,
     onDragEnd: () -> Unit,
     onZoomStart: (TransformOrigin) -> Unit,
-    onZoomPan: (Offset) -> Unit,
+    onZoomPan: suspend (Offset) -> Unit,
     onZoomEnd: () -> Unit,
 ) {
     awaitEachGesture {
