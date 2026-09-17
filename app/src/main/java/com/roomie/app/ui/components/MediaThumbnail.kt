@@ -17,7 +17,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -29,6 +31,7 @@ import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -46,8 +49,10 @@ private const val GRID_THUMBNAIL_PX = 320
 
 /** Both process-wide bitmap caches are sized in bytes (via `sizeOf`), not entry count — a 320x320
  *  ARGB_8888 bitmap is ~400KB, so an entry-count limit like the old `LruCache<_, _>(300)` could
- *  silently hold well over 100MB. */
-private const val PHOTO_CACHE_BYTES = 12 * 1024 * 1024
+ *  silently hold well over 100MB. Photo cache is sized generously enough that a two-screen fling
+ *  down and immediately back doesn't evict tiles seen moments ago — a smaller cap was flushing
+ *  already-seen tiles well before the user scrolled back to them. */
+private const val PHOTO_CACHE_BYTES = 40 * 1024 * 1024
 private const val VIDEO_CACHE_BYTES = 24 * 1024 * 1024
 
 /** Process-wide cache of already-decoded photo thumbnails, keyed by uri + target size (no
@@ -104,8 +109,9 @@ fun rememberAllowThumbnailDecode(isScrollInProgress: Boolean): Boolean {
 /**
  * Grid-safe thumbnail for a gallery item. Both photos and videos go through the same shape: a
  * process-wide in-memory [LruCache] hit renders directly via [Image] (no Coil, no disk, no
- * MediaStore); a miss falls through to the on-disk cache and then a real decode, but only while
- * [allowDecode] is true — see [rememberAllowThumbnailDecode]. Videos use
+ * MediaStore); a miss falls through to the on-disk cache, which is always read (cheap, a small
+ * local file); only when that also misses does a real decode of the source happen, gated behind
+ * [allowDecode] — see [rememberAllowThumbnailDecode]. Videos use
  * [android.content.ContentResolver.loadThumbnail] directly (API 29+) instead of Coil's video-frame
  * decoder — under a grid's concurrent load, the decoder was unreliable enough that video tiles
  * routinely rendered blank. Below API 29, video falls back to Coil since `loadThumbnail` doesn't
@@ -127,37 +133,55 @@ fun MediaThumbnail(
 ) {
     val context = LocalContext.current
     val placeholder = @Composable { Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) }
+    // Read via rememberUpdatedState, not a produceState key: gating only the real-decode branch
+    // below (through the snapshotFlow wait) means scroll starting/stopping never cancels and
+    // restarts the whole producer coroutine — which is what caused the white-flash bug (a
+    // key-driven restart re-began at photoThumbnailCache.get(key)/initialValue, briefly showing
+    // the placeholder again for a tile whose disk-cache read was already in flight or already
+    // resolved but not yet promoted to the in-memory cache).
+    val allowDecodeState = rememberUpdatedState(allowDecode)
 
     if (isVideo && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         val key = uri.toString()
-        val bitmap by produceState(videoThumbnailCache.get(key), uri, dateModified, allowDecode) {
-            if (value == null && allowDecode) {
-                value = withContext(Dispatchers.IO) {
-                    // Disk cache first — MediaMetadataRetriever-backed loadThumbnail is a real
-                    // frame-extraction decode, objectively pricier than a photo decode, and until
-                    // now was only ever cached in memory for the life of the process. dateModified
-                    // in the key means a video replaced/edited outside Roomie invalidates on its
-                    // own instead of serving a stale frame forever.
-                    val cacheKey = "video|$key|$VIDEO_THUMBNAIL_PX|$dateModified"
-                    val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
-                    val fromDisk = if (cacheFile.exists()) BitmapFactory.decodeFile(cacheFile.path) else null
-                    if (fromDisk != null) {
-                        ThumbnailDiskCache.logHit(cacheKey, cacheFile)
-                        fromDisk
-                    } else {
-                        ThumbnailDiskCache.logMiss(cacheKey)
-                        videoDecodeLimiter.withPermit {
-                            runCatching {
-                                context.contentResolver.loadThumbnail(
-                                    uri,
-                                    Size(VIDEO_THUMBNAIL_PX, VIDEO_THUMBNAIL_PX),
-                                    null,
-                                )
-                            }.getOrNull()
-                        }?.also { bmp -> ThumbnailDiskCache.writeAsync(cacheFile, bmp) }
-                    }
-                }?.also { videoThumbnailCache.put(key, it) }
+        val bitmap by produceState(videoThumbnailCache.get(key), uri, dateModified) {
+            if (value != null) return@produceState
+            // Disk cache first — MediaMetadataRetriever-backed loadThumbnail is a real
+            // frame-extraction decode, objectively pricier than a photo decode, and until now was
+            // only ever cached in memory for the life of the process. dateModified in the key means
+            // a video replaced/edited outside Roomie invalidates on its own instead of serving a
+            // stale frame forever. This disk read always runs, even mid-fling — it's a small local
+            // file, cheap enough that gating it bought nothing but the flash bug above.
+            val cacheKey = "video|$key|$VIDEO_THUMBNAIL_PX|$dateModified"
+            val fromDisk = withContext(Dispatchers.IO) {
+                val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
+                if (cacheFile.exists()) {
+                    ThumbnailDiskCache.logHit(cacheKey, cacheFile)
+                    BitmapFactory.decodeFile(cacheFile.path)
+                } else {
+                    null
+                }
             }
+            if (fromDisk != null) {
+                videoThumbnailCache.put(key, fromDisk)
+                value = fromDisk
+                return@produceState
+            }
+            // A real frame-extraction decode is real work — wait for scrolling to actually stop
+            // before starting one, without cancelling/restarting this coroutine while we wait.
+            snapshotFlow { allowDecodeState.value }.first { it }
+            ThumbnailDiskCache.logMiss(cacheKey)
+            value = withContext(Dispatchers.IO) {
+                val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
+                videoDecodeLimiter.withPermit {
+                    runCatching {
+                        context.contentResolver.loadThumbnail(
+                            uri,
+                            Size(VIDEO_THUMBNAIL_PX, VIDEO_THUMBNAIL_PX),
+                            null,
+                        )
+                    }.getOrNull()
+                }?.also { bmp -> ThumbnailDiskCache.writeAsync(cacheFile, bmp) }
+            }?.also { videoThumbnailCache.put(key, it) }
         }
         Box(modifier = modifier) {
             if (bitmap != null) {
@@ -173,35 +197,48 @@ fun MediaThumbnail(
         }
     } else {
         val key = "$uri|$GRID_THUMBNAIL_PX"
-        val bitmap by produceState(photoThumbnailCache.get(key), uri, dateModified, allowDecode) {
-            if (value == null && allowDecode) {
-                value = withContext(Dispatchers.IO) {
-                    val cacheKey = "$key|$dateModified"
-                    val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
-                    val fromDisk = if (cacheFile.exists()) BitmapFactory.decodeFile(cacheFile.path) else null
-                    if (fromDisk != null) {
-                        ThumbnailDiskCache.logHit(cacheKey, cacheFile)
-                        fromDisk
-                    } else {
-                        ThumbnailDiskCache.logMiss(cacheKey)
-                        val request = ImageRequest.Builder(context)
-                            .data(uri)
-                            .size(GRID_THUMBNAIL_PX, GRID_THUMBNAIL_PX)
-                            // Many short-lived tiles churn through a grid on every scroll. A
-                            // HARDWARE bitmap (Coil's default on API 26+) is a GPU buffer allocated
-                            // via gralloc IPC — cheap to keep around for one long-lived image,
-                            // expensive to allocate/free at this rate (framestats showed ~5s
-                            // GPU-time spikes and ~71MB of live AHardwareBuffers sized exactly like
-                            // these thumbnails). Software ARGB_8888 is cheaper for this pattern.
-                            .allowHardware(false)
-                            .build()
-                        val result = context.imageLoader.execute(request) as? SuccessResult
-                        (result?.image as? BitmapImage)?.bitmap?.also { bmp ->
-                            ThumbnailDiskCache.writeAsync(cacheFile, bmp)
-                        }
-                    }
-                }?.also { photoThumbnailCache.put(key, it) }
+        val bitmap by produceState(photoThumbnailCache.get(key), uri, dateModified) {
+            if (value != null) return@produceState
+            val cacheKey = "$key|$dateModified"
+            // Disk-JPEG read always runs, even mid-fling — a small local file is cheap enough that
+            // gating it bought nothing but the white-flash bug (see the video branch's doc above).
+            val fromDisk = withContext(Dispatchers.IO) {
+                val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
+                if (cacheFile.exists()) {
+                    ThumbnailDiskCache.logHit(cacheKey, cacheFile)
+                    BitmapFactory.decodeFile(cacheFile.path)
+                } else {
+                    null
+                }
             }
+            if (fromDisk != null) {
+                photoThumbnailCache.put(key, fromDisk)
+                value = fromDisk
+                return@produceState
+            }
+            // Decoding the source (and writing the result back to disk) is the real work — wait
+            // for scrolling to actually stop before starting it, without cancelling/restarting
+            // this coroutine while we wait.
+            snapshotFlow { allowDecodeState.value }.first { it }
+            ThumbnailDiskCache.logMiss(cacheKey)
+            value = withContext(Dispatchers.IO) {
+                val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
+                val request = ImageRequest.Builder(context)
+                    .data(uri)
+                    .size(GRID_THUMBNAIL_PX, GRID_THUMBNAIL_PX)
+                    // Many short-lived tiles churn through a grid on every scroll. A HARDWARE
+                    // bitmap (Coil's default on API 26+) is a GPU buffer allocated via gralloc IPC
+                    // — cheap to keep around for one long-lived image, expensive to allocate/free
+                    // at this rate (framestats showed ~5s GPU-time spikes and ~71MB of live
+                    // AHardwareBuffers sized exactly like these thumbnails). Software ARGB_8888 is
+                    // cheaper for this pattern.
+                    .allowHardware(false)
+                    .build()
+                val result = context.imageLoader.execute(request) as? SuccessResult
+                (result?.image as? BitmapImage)?.bitmap?.also { bmp ->
+                    ThumbnailDiskCache.writeAsync(cacheFile, bmp)
+                }
+            }?.also { photoThumbnailCache.put(key, it) }
         }
         Box(modifier = modifier) {
             if (bitmap != null) {

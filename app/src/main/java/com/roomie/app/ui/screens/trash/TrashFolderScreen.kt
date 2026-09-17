@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -49,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import com.roomie.app.CrashReporter
 import com.roomie.app.data.db.TrashEntry
 import com.roomie.app.ui.components.MediaThumbnail
+import com.roomie.app.ui.components.rememberAllowThumbnailDecode
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.ContainerShape
@@ -163,7 +165,10 @@ fun TrashFolderScreen(
                     Text(strings.trashIsEmpty, style = MaterialTheme.typography.bodyLarge)
                 }
             } else {
+                val gridState = rememberLazyGridState()
+                val allowDecode = rememberAllowThumbnailDecode(gridState.isScrollInProgress)
                 LazyVerticalGrid(
+                    state = gridState,
                     columns = GridCells.Fixed(3),
                     contentPadding = PaddingValues(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -174,6 +179,7 @@ fun TrashFolderScreen(
                         TrashEntryTile(
                             strings = strings,
                             entry = entry,
+                            allowDecode = allowDecode,
                             onRestore = { viewModel.restore(entry) },
                         )
                     }
@@ -187,6 +193,7 @@ fun TrashFolderScreen(
 private fun TrashEntryTile(
     strings: AppStrings,
     entry: TrashEntry,
+    allowDecode: Boolean,
     onRestore: () -> Unit,
 ) {
     Box(
@@ -201,6 +208,7 @@ private fun TrashEntryTile(
             isVideo = entry.stableId.startsWith("v"),
             contentDescription = entry.displayName,
             modifier = Modifier.fillMaxSize(),
+            allowDecode = allowDecode,
         )
         IconButton(
             onClick = onRestore,
