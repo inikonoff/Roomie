@@ -93,6 +93,7 @@ import kotlin.math.roundToInt
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
+    onOpenLogs: () -> Unit,
 ) {
     val settings by viewModel.settings.collectAsState()
     val folders by viewModel.folders.collectAsState()
@@ -208,6 +209,8 @@ fun SettingsScreen(
                     value = formatBytes(thumbnailCacheBytes),
                     modifier = Modifier.clickable { viewModel.clearThumbnailCache(context) },
                 )
+
+                NavigationRow(label = strings.viewLogs, onClick = onOpenLogs)
             }
 
             Spacer(modifier = Modifier.height(24.dp))

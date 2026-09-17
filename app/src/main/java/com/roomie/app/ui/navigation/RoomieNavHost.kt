@@ -25,6 +25,8 @@ import com.roomie.app.ui.screens.foldergrid.FolderGridViewModel
 import com.roomie.app.ui.screens.folders.FolderListScreen
 import com.roomie.app.ui.screens.folders.FolderListViewModel
 import com.roomie.app.ui.screens.limit.SwipeLimitScreen
+import com.roomie.app.ui.screens.logs.LogsScreen
+import com.roomie.app.ui.screens.logs.LogsViewModel
 import com.roomie.app.ui.screens.settings.SettingsScreen
 import com.roomie.app.ui.screens.settings.SettingsViewModel
 import com.roomie.app.ui.screens.summary.SummaryScreen
@@ -43,6 +45,7 @@ private object Routes {
     const val SUMMARY = "summary"
     const val SWIPE_LIMIT = "swipe_limit"
     const val SETTINGS = "settings"
+    const val LOGS = "logs"
 
     const val ALL_PHOTOS_SENTINEL = "all"
     const val NO_START_SENTINEL = "start"
@@ -203,6 +206,15 @@ fun RoomieNavHost(viewModelFactory: ViewModelFactory) {
             val settingsViewModel: SettingsViewModel = viewModel(factory = viewModelFactory)
             SettingsScreen(
                 viewModel = settingsViewModel,
+                onBack = { navController.popBackStack() },
+                onOpenLogs = { navController.navigate(Routes.LOGS) },
+            )
+        }
+
+        composable(Routes.LOGS) {
+            val logsViewModel: LogsViewModel = viewModel(factory = viewModelFactory)
+            LogsScreen(
+                viewModel = logsViewModel,
                 onBack = { navController.popBackStack() },
             )
         }

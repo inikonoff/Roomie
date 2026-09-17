@@ -6,6 +6,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.roomie.app.AppContainer
 import com.roomie.app.ui.screens.foldergrid.FolderGridViewModel
 import com.roomie.app.ui.screens.folders.FolderListViewModel
+import com.roomie.app.ui.screens.logs.LogsViewModel
 import com.roomie.app.ui.screens.settings.SettingsViewModel
 import com.roomie.app.ui.screens.swipe.SwipeSessionViewModel
 import com.roomie.app.ui.screens.trash.TrashFolderViewModel
@@ -34,6 +35,8 @@ class ViewModelFactory(private val container: AppContainer) : ViewModelProvider.
 
         TrashFolderViewModel::class.java ->
             TrashFolderViewModel(container.trashRepository) as T
+
+        LogsViewModel::class.java -> LogsViewModel() as T
 
         else -> throw IllegalArgumentException("Unknown ViewModel class: $modelClass")
     }

@@ -97,6 +97,10 @@ interface AppStrings {
     val clearThumbnailCache: String
     val enableSwipeLimit: String
     val unlockedLimitDisabled: String
+    val viewLogs: String
+    val refreshLogs: String
+    val shareLogs: String
+    val clearLogs: String
 
     // Swipe screen
     val reviewTrash: String
@@ -206,6 +210,10 @@ object EnglishStrings : AppStrings {
     override val clearThumbnailCache = "Clear thumbnail cache"
     override val enableSwipeLimit = "Enable swipe limit & monetization"
     override val unlockedLimitDisabled = "Unlocked — limit disabled"
+    override val viewLogs = "Logs"
+    override val refreshLogs = "Refresh"
+    override val shareLogs = "Share"
+    override val clearLogs = "Clear"
 
     override val reviewTrash = "Review trash"
     override val folderIsClean = "Nothing left here — this folder is clean."
@@ -313,6 +321,10 @@ object RussianStrings : AppStrings {
     override val clearThumbnailCache = "Очистить кэш превью"
     override val enableSwipeLimit = "Включить лимит свайпов и монетизацию"
     override val unlockedLimitDisabled = "Разблокировано — лимит отключён"
+    override val viewLogs = "Логи"
+    override val refreshLogs = "Обновить"
+    override val shareLogs = "Поделиться"
+    override val clearLogs = "Очистить"
 
     override val reviewTrash = "Просмотр корзины"
     override val folderIsClean = "Здесь больше ничего нет — папка чистая."
