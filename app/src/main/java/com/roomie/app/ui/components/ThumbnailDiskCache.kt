@@ -2,6 +2,8 @@ package com.roomie.app.ui.components
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.net.Uri
+import android.provider.MediaStore
 import android.util.Log
 import com.roomie.app.BuildConfig
 import kotlinx.coroutines.CoroutineScope
@@ -34,6 +36,29 @@ object ThumbnailDiskCache {
      *  expensive part, already reflected on screen via [onSuccess]) had completed, only the trivial
      *  file write after it kept getting cancelled. */
     private val writeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * The source's own last-modified time (seconds since epoch, per `MediaStore.MediaColumns
+     * .DATE_MODIFIED`), folded into a cache key so a file edited outside Roomie (or replaced at the
+     * same MediaStore id) invalidates automatically instead of serving a stale thumbnail forever —
+     * the gap e995ade's disk cache deliberately left open. Queried once per uri (callers `remember`
+     * the result, same as the existing file-exists check), not on every recomposition/frame; a
+     * failed query (permission revoked mid-session, row already gone) falls back to a fixed value
+     * rather than crashing — worst case that item's cache just never invalidates on edit, same as
+     * before this existed.
+     */
+    fun dateModifiedKeyPart(context: Context, uri: Uri): Long =
+        runCatching {
+            context.contentResolver.query(
+                uri,
+                arrayOf(MediaStore.MediaColumns.DATE_MODIFIED),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLong(0) else 0L
+            }
+        }.getOrNull() ?: 0L
 
     fun fileFor(context: Context, key: String): File {
         val dir = File(context.cacheDir, DIR_NAME).apply { mkdirs() }

@@ -78,8 +78,11 @@ fun MediaThumbnail(
                 value = withContext(Dispatchers.IO) {
                     // Disk cache first — MediaMetadataRetriever-backed loadThumbnail is a real
                     // frame-extraction decode, objectively pricier than a photo decode, and until
-                    // now was only ever cached in memory for the life of the process.
-                    val cacheKey = "video|$key|$VIDEO_THUMBNAIL_PX"
+                    // now was only ever cached in memory for the life of the process. dateModified
+                    // in the key means a video replaced/edited outside Roomie invalidates on its own
+                    // instead of serving a stale frame forever.
+                    val dateModified = ThumbnailDiskCache.dateModifiedKeyPart(context, uri)
+                    val cacheKey = "video|$key|$VIDEO_THUMBNAIL_PX|$dateModified"
                     val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
                     val fromDisk = if (cacheFile.exists()) BitmapFactory.decodeFile(cacheFile.path) else null
                     if (fromDisk != null) {
@@ -112,15 +115,20 @@ fun MediaThumbnail(
         }
     } else {
         val context = LocalContext.current
-        // Disk-cache key is uri + target size, matching the video path above — a cache hit here
-        // skips decoding/downsampling the original file entirely (Glide's DiskCacheStrategy
-        // .RESOURCE equivalent), not just re-reading already-decoded bytes off MediaStore. remember
-        // keyed on uri so a recomposition doesn't re-stat the file on every frame. GRID_THUMBNAIL_PX
+        // Disk-cache key is uri + target size + the source's own DATE_MODIFIED, matching the video
+        // path above — a cache hit here skips decoding/downsampling the original file entirely
+        // (Glide's DiskCacheStrategy.RESOURCE equivalent), not just re-reading already-decoded bytes
+        // off MediaStore, and a photo edited/replaced outside Roomie invalidates on its own instead
+        // of serving a stale thumbnail forever. remember keyed on uri so a recomposition doesn't
+        // re-stat the file (or re-query MediaStore for the date) on every frame. GRID_THUMBNAIL_PX
         // is a fixed constant, not a measured layout size — the key must stay identical between
         // runs, and a value that depends on this composable's own (sometimes not-yet-settled-on-
         // first-pass) layout constraints would silently change it and always miss.
-        val cacheKey = "$uri|$GRID_THUMBNAIL_PX"
-        val cacheFile = remember(uri) { ThumbnailDiskCache.fileFor(context, cacheKey) }
+        val cacheKey = remember(uri) {
+            val dateModified = ThumbnailDiskCache.dateModifiedKeyPart(context, uri)
+            "$uri|$GRID_THUMBNAIL_PX|$dateModified"
+        }
+        val cacheFile = remember(cacheKey) { ThumbnailDiskCache.fileFor(context, cacheKey) }
         val cacheHit = remember(cacheFile) {
             cacheFile.exists().also {
                 if (it) ThumbnailDiskCache.logHit(cacheKey, cacheFile) else ThumbnailDiskCache.logMiss(cacheKey)
