@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items as rowItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.data.media.PeriodFilter
 import com.roomie.app.ui.components.MediaThumbnail
+import com.roomie.app.ui.components.rememberAllowThumbnailDecode
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
 
@@ -99,18 +101,24 @@ fun FolderGridScreen(
                     Text(strings.nothingHere, style = MaterialTheme.typography.bodyLarge)
                 }
 
-                else -> LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    items(uiState.groups, key = { it.key }) { group ->
-                        GridThumbnail(
-                            strings = strings,
-                            group = group,
-                            onClick = { onOpenSwipe(group.cover.stableId) },
-                        )
+                else -> {
+                    val gridState = rememberLazyGridState()
+                    val allowDecode = rememberAllowThumbnailDecode(gridState.isScrollInProgress)
+                    LazyVerticalGrid(
+                        state = gridState,
+                        columns = GridCells.Fixed(3),
+                        contentPadding = PaddingValues(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        items(uiState.groups, key = { it.key }) { group ->
+                            GridThumbnail(
+                                strings = strings,
+                                group = group,
+                                allowDecode = allowDecode,
+                                onClick = { onOpenSwipe(group.cover.stableId) },
+                            )
+                        }
                     }
                 }
             }
@@ -142,7 +150,7 @@ private fun PeriodFilterRow(strings: AppStrings, selected: PeriodFilter, onSelec
 }
 
 @Composable
-private fun GridThumbnail(strings: AppStrings, group: MediaGroup, onClick: () -> Unit) {
+private fun GridThumbnail(strings: AppStrings, group: MediaGroup, allowDecode: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -156,6 +164,8 @@ private fun GridThumbnail(strings: AppStrings, group: MediaGroup, onClick: () ->
             isVideo = group.cover.isVideo,
             contentDescription = group.cover.displayName,
             modifier = Modifier.fillMaxSize(),
+            dateModified = group.cover.dateModified,
+            allowDecode = allowDecode,
         )
         if (group.cover.isVideo) {
             Icon(

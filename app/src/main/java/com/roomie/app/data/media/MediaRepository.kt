@@ -37,6 +37,7 @@ class MediaRepository(private val context: Context) {
                 coverUri = newestFirst?.uri,
                 coverIsVideo = newestFirst?.isVideo ?: false,
                 coverDateTakenMillis = newestFirst?.dateTakenMillis ?: 0L,
+                coverDateModified = newestFirst?.dateModified ?: 0L,
             )
         }.sortedByDescending { it.itemCount }
     }
@@ -113,6 +114,7 @@ class MediaRepository(private val context: Context) {
             add(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
             add(MediaStore.Images.Media.DATE_TAKEN)
             add(MediaStore.Images.Media.DATE_ADDED)
+            add(MediaStore.Images.Media.DATE_MODIFIED)
             add(MediaStore.Images.Media.SIZE)
             add(MediaStore.Images.Media.WIDTH)
             add(MediaStore.Images.Media.HEIGHT)
@@ -141,6 +143,7 @@ class MediaRepository(private val context: Context) {
                 filePath = cursor.getStringOrEmpty(MediaStore.Images.Media.DATA).ifBlank { null },
                 width = width,
                 height = height,
+                dateModified = cursor.getLong(MediaStore.Images.Media.DATE_MODIFIED),
             )
         }
     }
@@ -153,6 +156,7 @@ class MediaRepository(private val context: Context) {
             add(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)
             add(MediaStore.Video.Media.DATE_TAKEN)
             add(MediaStore.Video.Media.DATE_ADDED)
+            add(MediaStore.Video.Media.DATE_MODIFIED)
             add(MediaStore.Video.Media.SIZE)
             add(MediaStore.Video.Media.DURATION)
             add(MediaStore.Video.Media.WIDTH)
@@ -181,6 +185,7 @@ class MediaRepository(private val context: Context) {
                 filePath = cursor.getStringOrEmpty(MediaStore.Video.Media.DATA).ifBlank { null },
                 width = cursor.getInt(MediaStore.Video.Media.WIDTH),
                 height = cursor.getInt(MediaStore.Video.Media.HEIGHT),
+                dateModified = cursor.getLong(MediaStore.Video.Media.DATE_MODIFIED),
             )
         }
     }

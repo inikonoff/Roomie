@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
+import coil3.request.crossfade
 import coil3.size.Size
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.ui.components.InlineVideoPlayer
@@ -63,7 +64,7 @@ fun SwipeCard(
         } else {
             val context = LocalContext.current
             val density = LocalDensity.current
-            val requestBuilder = ImageRequest.Builder(context).data(group.cover.uri)
+            val requestBuilder = ImageRequest.Builder(context).data(group.cover.uri).crossfade(true)
             if (isZoomed) {
                 // Only while actually zoomed in does the extra detail of the source's own
                 // resolution matter — requesting it for every ordinary card was what made rapid

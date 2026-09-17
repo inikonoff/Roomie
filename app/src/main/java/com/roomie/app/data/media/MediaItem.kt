@@ -22,6 +22,9 @@ data class MediaItem(
      *  show each card at its own native aspect ratio instead of cropping to a fixed shape. */
     val width: Int = 0,
     val height: Int = 0,
+    /** MediaStore's own `DATE_MODIFIED` (seconds since epoch), read once here so the thumbnail
+     *  cache key can fold it in without MediaThumbnail ever querying MediaStore itself. */
+    val dateModified: Long = 0L,
 ) {
     /** Stable identity across image/video tables, since raw `_ID` can collide between them. */
     val stableId: String get() = if (isVideo) "v$id" else "i$id"
@@ -56,6 +59,9 @@ data class GalleryFolder(
     /** Only used to find the single most-recent item across every folder, for the "All Photos"
      *  tile's own cover — not otherwise surfaced in the UI. */
     val coverDateTakenMillis: Long = 0L,
+    /** The cover item's own DATE_MODIFIED, passed through to [com.roomie.app.ui.components.MediaThumbnail]
+     *  for its disk-cache key — see [MediaItem.dateModified]. */
+    val coverDateModified: Long = 0L,
 )
 
 enum class PeriodFilter {

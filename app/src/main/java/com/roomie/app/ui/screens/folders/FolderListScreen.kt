@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Photo
@@ -46,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import android.net.Uri
 import com.roomie.app.data.media.GalleryFolder
 import com.roomie.app.ui.components.MediaThumbnail
+import com.roomie.app.ui.components.rememberAllowThumbnailDecode
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.ContainerShape
@@ -159,7 +161,10 @@ private fun FolderGrid(
     onOpenTrash: () -> Unit,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
+        val gridState = rememberLazyGridState()
+        val allowDecode = rememberAllowThumbnailDecode(gridState.isScrollInProgress)
         LazyVerticalGrid(
+            state = gridState,
             columns = GridCells.Fixed(2),
             contentPadding = PaddingValues(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -174,6 +179,8 @@ private fun FolderGrid(
                     totalCount = folders.sumOf { it.itemCount },
                     coverUri = newestOverall?.coverUri,
                     coverIsVideo = newestOverall?.coverIsVideo ?: false,
+                    coverDateModified = newestOverall?.coverDateModified ?: 0L,
+                    allowDecode = allowDecode,
                     onClick = { onOpenFolder(null, strings.allPhotos) },
                 )
             }
@@ -184,6 +191,7 @@ private fun FolderGrid(
                 FolderCard(
                     folder = folder,
                     strings = strings,
+                    allowDecode = allowDecode,
                     onClick = { onOpenFolder(folder.bucketId, folder.displayName) },
                 )
             }
@@ -197,6 +205,8 @@ private fun AllPhotosCard(
     totalCount: Int,
     coverUri: Uri?,
     coverIsVideo: Boolean,
+    coverDateModified: Long,
+    allowDecode: Boolean,
     onClick: () -> Unit,
 ) {
     FolderTile(
@@ -204,6 +214,8 @@ private fun AllPhotosCard(
         subtitle = strings.itemsCount(totalCount),
         coverUri = coverUri,
         coverIsVideo = coverIsVideo,
+        coverDateModified = coverDateModified,
+        allowDecode = allowDecode,
         icon = Icons.Filled.Photo,
         onClick = onClick,
     )
@@ -221,12 +233,14 @@ private fun TrashCard(strings: AppStrings, itemCount: Int, onClick: () -> Unit) 
 }
 
 @Composable
-private fun FolderCard(folder: GalleryFolder, strings: AppStrings, onClick: () -> Unit) {
+private fun FolderCard(folder: GalleryFolder, strings: AppStrings, allowDecode: Boolean, onClick: () -> Unit) {
     FolderTile(
         title = folder.displayName,
         subtitle = strings.itemsCount(folder.itemCount),
         coverUri = folder.coverUri,
         coverIsVideo = folder.coverIsVideo,
+        coverDateModified = folder.coverDateModified,
+        allowDecode = allowDecode,
         icon = null,
         onClick = onClick,
     )
@@ -238,6 +252,8 @@ private fun FolderTile(
     subtitle: String,
     coverUri: Uri?,
     coverIsVideo: Boolean = false,
+    coverDateModified: Long = 0L,
+    allowDecode: Boolean = true,
     icon: ImageVector?,
     onClick: () -> Unit,
 ) {
@@ -264,6 +280,8 @@ private fun FolderTile(
                     isVideo = coverIsVideo,
                     contentDescription = title,
                     modifier = Modifier.fillMaxSize(),
+                    dateModified = coverDateModified,
+                    allowDecode = allowDecode,
                 )
                 icon != null -> Icon(
                     icon,
