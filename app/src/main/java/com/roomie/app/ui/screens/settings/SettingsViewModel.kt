@@ -106,6 +106,10 @@ class SettingsViewModel(
         viewModelScope.launch { settingsRepository.setLanguageMode(mode) }
     }
 
+    fun setEdgePaddingDp(value: Int) {
+        viewModelScope.launch { settingsRepository.setEdgePaddingDp(value) }
+    }
+
     fun applyGesturePreset(preset: SwipeGesturePreset) {
         viewModelScope.launch {
             settingsRepository.setSwipeActions(

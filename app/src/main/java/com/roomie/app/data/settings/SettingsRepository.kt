@@ -38,6 +38,7 @@ class SettingsRepository(private val context: Context) {
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val CARD_ANIMATION_STYLE = stringPreferencesKey("card_animation_style")
         val LANGUAGE_MODE = stringPreferencesKey("language_mode")
+        val EDGE_PADDING_DP = intPreferencesKey("edge_padding_dp")
     }
 
     val settings: Flow<RoomieSettings> = context.dataStore.data.map { prefs ->
@@ -64,6 +65,7 @@ class SettingsRepository(private val context: Context) {
             cardAnimationStyle = prefs[Keys.CARD_ANIMATION_STYLE]?.let { CardAnimationStyle.valueOf(it) }
                 ?: defaults.cardAnimationStyle,
             languageMode = prefs[Keys.LANGUAGE_MODE]?.let { LanguageMode.valueOf(it) } ?: defaults.languageMode,
+            edgePaddingDp = prefs[Keys.EDGE_PADDING_DP] ?: defaults.edgePaddingDp,
         )
     }
 
@@ -150,6 +152,11 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setLanguageMode(mode: LanguageMode) {
         context.dataStore.edit { it[Keys.LANGUAGE_MODE] = mode.name }
+    }
+
+    suspend fun setEdgePaddingDp(value: Int) {
+        require(value in RoomieSettings.MIN_EDGE_PADDING_DP..RoomieSettings.MAX_EDGE_PADDING_DP)
+        context.dataStore.edit { it[Keys.EDGE_PADDING_DP] = value }
     }
 
     /** One saved period filter per folder (keyed by bucketId; `null` is the "All photos" bucket) —

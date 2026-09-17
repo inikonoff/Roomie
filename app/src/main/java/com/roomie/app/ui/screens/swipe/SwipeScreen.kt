@@ -171,7 +171,7 @@ fun SwipeScreen(
                 )
             }
 
-            Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxSize().padding(uiState.edgePaddingDp.dp), contentAlignment = Alignment.Center) {
                 when {
                     uiState.isLoading -> CircularProgressIndicator()
                     uiState.stack.isEmpty() -> Text(

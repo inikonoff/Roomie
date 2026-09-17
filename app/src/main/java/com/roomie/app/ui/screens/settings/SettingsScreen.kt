@@ -39,6 +39,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -83,6 +84,7 @@ import com.roomie.app.ui.theme.SurfaceMuted
 import com.roomie.app.ui.theme.SwipeLeftDelete
 import com.roomie.app.ui.theme.SwipePostpone
 import com.roomie.app.ui.theme.SwipeRightKeep
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -219,6 +221,8 @@ fun SettingsScreen(
 
                 SubsectionTitle(strings.sectionCardAnimation)
                 CardAnimationStyleSelector(strings, settings.cardAnimationStyle, viewModel::setCardAnimationStyle)
+
+                EdgePaddingSlider(strings, settings.edgePaddingDp, viewModel::setEdgePaddingDp)
             }
         }
     }
@@ -445,6 +449,24 @@ private fun CardAnimationStyleSelector(
                 SegmentedLabel(style.label(strings))
             }
         }
+    }
+}
+
+/** Plain number, no unit shown — the value is a dp amount internally, but that's an implementation
+ *  detail nobody adjusting a slider needs to see. */
+@Composable
+private fun EdgePaddingSlider(strings: AppStrings, currentDp: Int, onChanged: (Int) -> Unit) {
+    Column(modifier = Modifier.padding(top = 12.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(strings.edgePadding, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text("$currentDp", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+        }
+        Slider(
+            value = currentDp.toFloat(),
+            onValueChange = { onChanged(it.roundToInt()) },
+            valueRange = RoomieSettings.MIN_EDGE_PADDING_DP.toFloat()..RoomieSettings.MAX_EDGE_PADDING_DP.toFloat(),
+            steps = RoomieSettings.MAX_EDGE_PADDING_DP - RoomieSettings.MIN_EDGE_PADDING_DP - 1,
+        )
     }
 }
 

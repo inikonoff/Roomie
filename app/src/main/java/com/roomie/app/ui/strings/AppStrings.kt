@@ -67,6 +67,7 @@ interface AppStrings {
     val animationClassic: String
     val animationFade: String
     val animationShrink: String
+    val edgePadding: String
     val sectionSwipeGestures: String
     val presetClassic: String
     val presetBrowseDeleteUp: String
@@ -172,6 +173,7 @@ object EnglishStrings : AppStrings {
     override val animationClassic = "Classic"
     override val animationFade = "Fade"
     override val animationShrink = "Shrink"
+    override val edgePadding = "Padding"
     override val sectionSwipeGestures = "Swipe gestures"
     override val presetClassic = "Classic"
     override val presetBrowseDeleteUp = "Browse"
@@ -273,6 +275,7 @@ object RussianStrings : AppStrings {
     override val animationClassic = "Классика"
     override val animationFade = "Затухание"
     override val animationShrink = "Сжатие"
+    override val edgePadding = "Отступ"
     override val sectionSwipeGestures = "Жесты свайпа"
     override val presetClassic = "Классика"
     override val presetBrowseDeleteUp = "Обзор"
