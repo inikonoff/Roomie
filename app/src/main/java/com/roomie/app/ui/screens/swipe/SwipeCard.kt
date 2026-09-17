@@ -35,8 +35,6 @@ import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.request.crossfade
-import coil3.request.memoryCacheKey
-import coil3.request.placeholderMemoryCacheKey
 import coil3.size.Size
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.ui.components.InlineVideoPlayer
