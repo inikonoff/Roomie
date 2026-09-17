@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.imageLoader
 import coil3.request.ImageRequest
+import coil3.request.allowHardware
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.data.settings.CardAnimationStyle
 import com.roomie.app.ui.screens.settings.label
@@ -343,6 +344,7 @@ private fun CardStack(
                 ImageRequest.Builder(context)
                     .data(group.cover.uri)
                     .size(widthPx, heightPx)
+                    .allowHardware(false)
                     .build(),
             )
         }
