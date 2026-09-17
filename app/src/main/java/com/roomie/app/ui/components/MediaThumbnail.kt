@@ -13,7 +13,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -23,7 +22,6 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val VIDEO_THUMBNAIL_PX = 320
@@ -70,15 +68,22 @@ fun MediaThumbnail(
                     // Disk cache first — MediaMetadataRetriever-backed loadThumbnail is a real
                     // frame-extraction decode, objectively pricier than a photo decode, and until
                     // now was only ever cached in memory for the life of the process.
-                    val cacheFile = ThumbnailDiskCache.fileFor(context, "video|$key|$VIDEO_THUMBNAIL_PX")
+                    val cacheKey = "video|$key|$VIDEO_THUMBNAIL_PX"
+                    val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
                     val fromDisk = if (cacheFile.exists()) BitmapFactory.decodeFile(cacheFile.path) else null
-                    fromDisk ?: runCatching {
-                        context.contentResolver.loadThumbnail(
-                            uri,
-                            Size(VIDEO_THUMBNAIL_PX, VIDEO_THUMBNAIL_PX),
-                            null,
-                        )
-                    }.getOrNull()?.also { bmp -> ThumbnailDiskCache.write(cacheFile, bmp) }
+                    if (fromDisk != null) {
+                        ThumbnailDiskCache.logHit(cacheKey, cacheFile)
+                        fromDisk
+                    } else {
+                        ThumbnailDiskCache.logMiss(cacheKey)
+                        runCatching {
+                            context.contentResolver.loadThumbnail(
+                                uri,
+                                Size(VIDEO_THUMBNAIL_PX, VIDEO_THUMBNAIL_PX),
+                                null,
+                            )
+                        }.getOrNull()?.also { bmp -> ThumbnailDiskCache.writeAsync(cacheFile, bmp) }
+                    }
                 }?.also { videoThumbnailCache.put(key, it) }
             }
         }
@@ -94,13 +99,20 @@ fun MediaThumbnail(
         }
     } else {
         val context = LocalContext.current
-        val scope = rememberCoroutineScope()
         // Disk-cache key is uri + target size, matching the video path above — a cache hit here
         // skips decoding/downsampling the original file entirely (Glide's DiskCacheStrategy
         // .RESOURCE equivalent), not just re-reading already-decoded bytes off MediaStore. remember
-        // keyed on uri so a recomposition doesn't re-stat the file on every frame.
-        val cacheFile = remember(uri) { ThumbnailDiskCache.fileFor(context, "$uri|$GRID_THUMBNAIL_PX") }
-        val cacheHit = remember(cacheFile) { cacheFile.exists() }
+        // keyed on uri so a recomposition doesn't re-stat the file on every frame. GRID_THUMBNAIL_PX
+        // is a fixed constant, not a measured layout size — the key must stay identical between
+        // runs, and a value that depends on this composable's own (sometimes not-yet-settled-on-
+        // first-pass) layout constraints would silently change it and always miss.
+        val cacheKey = "$uri|$GRID_THUMBNAIL_PX"
+        val cacheFile = remember(uri) { ThumbnailDiskCache.fileFor(context, cacheKey) }
+        val cacheHit = remember(cacheFile) {
+            cacheFile.exists().also {
+                if (it) ThumbnailDiskCache.logHit(cacheKey, cacheFile) else ThumbnailDiskCache.logMiss(cacheKey)
+            }
+        }
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(if (cacheHit) cacheFile else uri)
@@ -113,12 +125,14 @@ fun MediaThumbnail(
                 .allowHardware(false)
                 .apply {
                     // Cache miss only: once Coil finishes decoding+downsampling, stash the result on
-                    // disk for the next cold start. Doesn't block this load — write happens in the
-                    // background, on whatever bitmap already exists in memory.
+                    // disk for the next cold start. Doesn't block this load — the write itself runs
+                    // on ThumbnailDiskCache's own scope, not this composable's — a fast scroll
+                    // disposing this tile (LazyVerticalGrid does that the moment it leaves the
+                    // visible window) must not cancel a write for a decode that already finished.
                     if (!cacheHit) {
                         listener(onSuccess = { _, result ->
                             (result.image as? BitmapImage)?.bitmap?.let { bitmap ->
-                                scope.launch { ThumbnailDiskCache.write(cacheFile, bitmap) }
+                                ThumbnailDiskCache.writeAsync(cacheFile, bitmap)
                             }
                         })
                     }
