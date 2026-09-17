@@ -16,6 +16,7 @@ import com.roomie.app.data.settings.SwipeCardAction
 import com.roomie.app.data.trash.TrashRepository
 import com.roomie.app.ui.screens.settings.SwipeGesturePreset
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -29,6 +30,11 @@ import kotlinx.coroutines.launch
 enum class SwipeDirection { LEFT, RIGHT, UP, DOWN }
 
 private const val MAX_UNDO_HISTORY = 10
+
+/** How many swipes accumulate in memory before [SwipeSessionViewModel.flushSwipeCount] writes them
+ *  to DataStore in one go, instead of a real disk write on every single swipe (the heaviest frame
+ *  already, between the stack update and the exit-fling animation starting). */
+private const val SWIPE_COUNT_FLUSH_INTERVAL = 5
 
 private data class SwipeAction(val group: MediaGroup, val action: SwipeCardAction)
 
@@ -106,6 +112,13 @@ class SwipeSessionViewModel(
     private val pendingMoveJobs = mutableMapOf<String, Job>()
 
     private var currentSettings: RoomieSettings = RoomieSettings()
+
+    /** Swipes counted locally since the last [flushSwipeCount], not yet written to DataStore. Only
+     *  matters for [RoomieSettings.hasReachedSwipeLimit], which is itself only ever reachable while
+     *  monetization is enabled (currently unreachable from the UI — see Settings) — batching means
+     *  that gate can lag by up to [SWIPE_COUNT_FLUSH_INTERVAL] swipes behind the true count, an
+     *  accepted tradeoff for not hitting disk on every single swipe. */
+    private var pendingSwipeIncrement = 0
 
     /** Identifies the folder/period/start-point [loadFolder] last actually loaded. Navigating to
      *  another screen (e.g. the Trash folder) and back disposes and recomposes the swipe screen,
@@ -247,7 +260,24 @@ class SwipeSessionViewModel(
             )
         }
 
-        viewModelScope.launch { settingsRepository.incrementSessionSwipeCount() }
+        pendingSwipeIncrement++
+        if (pendingSwipeIncrement >= SWIPE_COUNT_FLUSH_INTERVAL) flushSwipeCount()
+    }
+
+    /** Writes accumulated swipes to DataStore in one edit and resets the local counter. Uses
+     *  [NonCancellable] so the final flush from [onCleared] still lands even though by the time
+     *  that runs, viewModelScope's own Job has already been cancelled (cancelling it is part of how
+     *  ViewModel.clear() works, and happens before onCleared() is even called) — a plain
+     *  viewModelScope.launch there would be a child of an already-cancelled Job and never run. */
+    private fun flushSwipeCount() {
+        val toFlush = pendingSwipeIncrement
+        if (toFlush <= 0) return
+        pendingSwipeIncrement = 0
+        viewModelScope.launch(NonCancellable) { settingsRepository.incrementSessionSwipeCount(toFlush) }
+    }
+
+    override fun onCleared() {
+        flushSwipeCount()
     }
 
     fun undo() {
@@ -314,6 +344,10 @@ class SwipeSessionViewModel(
     fun prepareSessionSummary() {
         val state = _uiState.value
         _summaryState.value = SummaryUiState(itemCount = state.deletedCount, freedBytes = state.deletedBytes)
+        // Any not-yet-flushed swipes from this same session must not survive this reset — otherwise
+        // a later flush (e.g. onCleared() once the user leaves the summary screen) would add them
+        // back on top of the 0 this just wrote.
+        pendingSwipeIncrement = 0
         viewModelScope.launch { settingsRepository.resetSessionSwipeCount() }
     }
 
@@ -323,7 +357,10 @@ class SwipeSessionViewModel(
 
     suspend fun unlockViaRewardedAd(): Boolean {
         val result = monetizationGateway.showRewardedAd()
-        if (result == RewardResult.GRANTED) settingsRepository.resetSessionSwipeCount()
+        if (result == RewardResult.GRANTED) {
+            pendingSwipeIncrement = 0
+            settingsRepository.resetSessionSwipeCount()
+        }
         return result == RewardResult.GRANTED
     }
 

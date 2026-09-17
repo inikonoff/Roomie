@@ -93,10 +93,12 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.SESSION_SWIPE_COUNT] = 0 }
     }
 
-    suspend fun incrementSessionSwipeCount() {
+    /** [by] lets a caller batch up several swipes into one disk write instead of one per swipe —
+     *  see [com.roomie.app.ui.screens.swipe.SwipeSessionViewModel]'s pendingSwipeIncrement. */
+    suspend fun incrementSessionSwipeCount(by: Int = 1) {
         context.dataStore.edit {
             val current = it[Keys.SESSION_SWIPE_COUNT] ?: 0
-            it[Keys.SESSION_SWIPE_COUNT] = current + 1
+            it[Keys.SESSION_SWIPE_COUNT] = current + by
         }
     }
 
