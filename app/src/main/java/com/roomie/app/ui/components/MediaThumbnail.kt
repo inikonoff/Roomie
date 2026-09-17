@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -25,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import java.io.File
 
 private const val VIDEO_THUMBNAIL_PX = 320
 
@@ -119,49 +119,53 @@ fun MediaThumbnail(
         // path above — a cache hit here skips decoding/downsampling the original file entirely
         // (Glide's DiskCacheStrategy.RESOURCE equivalent), not just re-reading already-decoded bytes
         // off MediaStore, and a photo edited/replaced outside Roomie invalidates on its own instead
-        // of serving a stale thumbnail forever. remember keyed on uri so a recomposition doesn't
-        // re-stat the file (or re-query MediaStore for the date) on every frame. GRID_THUMBNAIL_PX
-        // is a fixed constant, not a measured layout size — the key must stay identical between
-        // runs, and a value that depends on this composable's own (sometimes not-yet-settled-on-
-        // first-pass) layout constraints would silently change it and always miss.
-        val cacheKey = remember(uri) {
-            val dateModified = ThumbnailDiskCache.dateModifiedKeyPart(context, uri)
-            "$uri|$GRID_THUMBNAIL_PX|$dateModified"
-        }
-        val cacheFile = remember(cacheKey) { ThumbnailDiskCache.fileFor(context, cacheKey) }
-        val cacheHit = remember(cacheFile) {
-            cacheFile.exists().also {
-                if (it) ThumbnailDiskCache.logHit(cacheKey, cacheFile) else ThumbnailDiskCache.logMiss(cacheKey)
+        // of serving a stale thumbnail forever. Resolved in produceState (not remember), same as the
+        // video path above: dateModifiedKeyPart is a ContentResolver.query() and fileFor()/exists()
+        // are file I/O, none of which may run synchronously in composition — a tile scrolling into
+        // view for the first time in a LazyVerticalGrid resolves this on the UI thread otherwise.
+        val cacheInfo by produceState<ThumbnailCacheInfo?>(initialValue = null, uri) {
+            value = withContext(Dispatchers.IO) {
+                val dateModified = ThumbnailDiskCache.dateModifiedKeyPart(context, uri)
+                val cacheKey = "$uri|$GRID_THUMBNAIL_PX|$dateModified"
+                val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
+                val hit = cacheFile.exists()
+                if (hit) ThumbnailDiskCache.logHit(cacheKey, cacheFile) else ThumbnailDiskCache.logMiss(cacheKey)
+                ThumbnailCacheInfo(cacheFile, hit)
             }
         }
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(if (cacheHit) cacheFile else uri)
-                .size(GRID_THUMBNAIL_PX, GRID_THUMBNAIL_PX)
-                // Many short-lived tiles churn through a grid on every scroll. A HARDWARE bitmap
-                // (Coil's default on API 26+) is a GPU buffer allocated via gralloc IPC — cheap to
-                // keep around for one long-lived image, expensive to allocate/free at this rate
-                // (framestats showed ~5s GPU-time spikes and ~71MB of live AHardwareBuffers sized
-                // exactly like these thumbnails). Software ARGB_8888 is cheaper for this pattern.
-                .allowHardware(false)
-                .apply {
-                    // Cache miss only: once Coil finishes decoding+downsampling, stash the result on
-                    // disk for the next cold start. Doesn't block this load — the write itself runs
-                    // on ThumbnailDiskCache's own scope, not this composable's — a fast scroll
-                    // disposing this tile (LazyVerticalGrid does that the moment it leaves the
-                    // visible window) must not cancel a write for a decode that already finished.
-                    if (!cacheHit) {
-                        listener(onSuccess = { _, result ->
-                            (result.image as? BitmapImage)?.bitmap?.let { bitmap ->
-                                ThumbnailDiskCache.writeAsync(cacheFile, bitmap)
-                            }
-                        })
+        cacheInfo?.let { info ->
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(if (info.cacheHit) info.cacheFile else uri)
+                    .size(GRID_THUMBNAIL_PX, GRID_THUMBNAIL_PX)
+                    // Many short-lived tiles churn through a grid on every scroll. A HARDWARE bitmap
+                    // (Coil's default on API 26+) is a GPU buffer allocated via gralloc IPC — cheap to
+                    // keep around for one long-lived image, expensive to allocate/free at this rate
+                    // (framestats showed ~5s GPU-time spikes and ~71MB of live AHardwareBuffers sized
+                    // exactly like these thumbnails). Software ARGB_8888 is cheaper for this pattern.
+                    .allowHardware(false)
+                    .apply {
+                        // Cache miss only: once Coil finishes decoding+downsampling, stash the result
+                        // on disk for the next cold start. Doesn't block this load — the write itself
+                        // runs on ThumbnailDiskCache's own scope, not this composable's — a fast
+                        // scroll disposing this tile (LazyVerticalGrid does that the moment it leaves
+                        // the visible window) must not cancel a write for a decode that already
+                        // finished.
+                        if (!info.cacheHit) {
+                            listener(onSuccess = { _, result ->
+                                (result.image as? BitmapImage)?.bitmap?.let { bitmap ->
+                                    ThumbnailDiskCache.writeAsync(info.cacheFile, bitmap)
+                                }
+                            })
+                        }
                     }
-                }
-                .build(),
-            contentDescription = contentDescription,
-            contentScale = contentScale,
-            modifier = modifier,
-        )
+                    .build(),
+                contentDescription = contentDescription,
+                contentScale = contentScale,
+                modifier = modifier,
+            )
+        }
     }
 }
+
+private data class ThumbnailCacheInfo(val cacheFile: File, val cacheHit: Boolean)
