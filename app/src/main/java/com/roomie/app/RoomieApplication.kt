@@ -55,6 +55,6 @@ class RoomieApplication : Application(), SingletonImageLoader.Factory {
             // how many run concurrently is what turns that into a steady trickle of ~150-300ms
             // frame spikes into a smooth scroll, at the cost of slightly later delivery per tile
             // (masked by the surface-colored placeholder every grid tile already sits on).
-            .decoderDispatcher(Dispatchers.IO.limitedParallelism(3))
+            .decoderCoroutineContext(Dispatchers.IO.limitedParallelism(3))
             .build()
 }
