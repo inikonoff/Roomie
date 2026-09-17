@@ -294,11 +294,11 @@ private fun BottomActionBar(strings: AppStrings, canUndo: Boolean, onUndo: () ->
     }
 }
 
-/** A card exiting the stack after a committed swipe, tracked only by which group and which
- *  direction it's flying out in — unlike before, no separate start-offset copy is needed: the
- *  exiting [SwipeCardSlot] for this same key already holds the live drag/fling state to continue
- *  from (see the class doc on [CardStack] for why that continuity is now possible at all). */
-private data class ExitingCardState(val group: MediaGroup, val direction: SwipeDirection)
+/** A card exiting the stack after a committed swipe. [offset] is a snapshot taken by
+ *  `SwipeCardSlot`'s `onDragEnd` at the exact instant it decided to commit — passed through rather
+ *  than re-read later from the (still-mutable) drag/fling state, so a stray leftover spring-back
+ *  coroutine from a very quick re-grab can't race with it (see [SwipeCardSlot]'s `LaunchedEffect`). */
+private data class ExitingCardState(val group: MediaGroup, val direction: SwipeDirection, val offset: Offset)
 
 private enum class CardRole { Behind, Top, Exiting }
 
@@ -383,8 +383,13 @@ private fun CardStack(
                     cardHeight = h,
                     animationStyle = animationStyle,
                     exitDirection = if (role == CardRole.Exiting) exiting?.direction else null,
-                    onCommitted = { direction ->
-                        exiting = ExitingCardState(group, direction)
+                    exitOffset = if (role == CardRole.Exiting) exiting?.offset else null,
+                    onCommitted = { direction, releaseOffset ->
+                        // Snapshot offset first, mark this slot as exiting second, only then tell
+                        // the ViewModel — in that order, so the exiting state (and the offset it
+                        // needs) is already set before anything downstream could observe the stack
+                        // without it, which is what a successful-swipe skip/pop would look like.
+                        exiting = ExitingCardState(group, direction, releaseOffset)
                         onSwiped(direction)
                     },
                     onExitFinished = { exiting = null },
@@ -469,7 +474,8 @@ private fun SwipeCardSlot(
     cardHeight: Dp,
     animationStyle: CardAnimationStyle,
     exitDirection: SwipeDirection?,
-    onCommitted: (SwipeDirection) -> Unit,
+    exitOffset: Offset?,
+    onCommitted: (SwipeDirection, Offset) -> Unit,
     onExitFinished: () -> Unit,
 ) {
     // Written to directly on every pointer-move event instead of through a suspend Animatable —
@@ -496,17 +502,21 @@ private fun SwipeCardSlot(
     val cardWidthPx = with(density) { cardWidth.toPx() }
     val cardHeightPx = with(density) { cardHeight.toPx() }
 
-    // Fires once per commit — role has already become Exiting with a non-null exitDirection by the
-    // time this runs (CardStack sets both together) — continuing the fling from dragOffset +
-    // flingOffset's *current* value (wherever the finger left it) rather than a fresh Animatable
-    // seeded from a copied release offset, since this is the very same remembered state that was
-    // already live while this same instance was still the draggable Top card a moment ago.
+    // Fires once per commit — role has already become Exiting with a non-null exitDirection/
+    // exitOffset by the time this runs (CardStack sets all three together). Uses exitOffset — the
+    // value onDragEnd captured at the exact instant it decided to commit — rather than re-reading
+    // dragOffset + flingOffset.value here: a quick re-grab right after a previous cancelled swipe on
+    // this same card can leave that cancelled swipe's own spring-back coroutine still running
+    // (nothing cancels it just because a new gesture started), so a live re-read at this later point
+    // could race with it and use a value that no longer matches what was actually on screen at
+    // release. Continuing the *animation* from this same remembered flingOffset (rather than a
+    // fresh Animatable) is still what avoids a remount/blip — only the starting value is now an
+    // explicit snapshot instead of a live re-read.
     LaunchedEffect(exitDirection) {
-        if (exitDirection != null) {
-            val current = dragOffset + flingOffset.value
-            flingOffset.snapTo(current)
+        if (exitDirection != null && exitOffset != null) {
+            flingOffset.snapTo(exitOffset)
             dragOffset = Offset.Zero
-            flingOffset.animateTo(flingTarget(exitDirection, current), SWIPE_SPRING)
+            flingOffset.animateTo(flingTarget(exitDirection, exitOffset), SWIPE_SPRING)
             onExitFinished()
         }
     }
@@ -553,11 +563,15 @@ private fun SwipeCardSlot(
                                     else -> null
                                 }
                                 if (direction != null) {
-                                    // Just notify the caller — the actual fly-out animation is
-                                    // driven by this same instance's own LaunchedEffect above,
-                                    // once CardStack's next recomposition flips this slot's role
-                                    // to Exiting with this direction.
-                                    onCommitted(direction)
+                                    // Pass the snapshot taken right above (current) through
+                                    // explicitly instead of letting the exit animation re-read
+                                    // dragOffset/flingOffset later — see the LaunchedEffect above
+                                    // for why a live re-read at that later point can race with a
+                                    // stray leftover spring-back coroutine. The actual fly-out
+                                    // animation is driven by this same instance's own
+                                    // LaunchedEffect, once CardStack's next recomposition flips
+                                    // this slot's role to Exiting with this direction/offset.
+                                    onCommitted(direction, current)
                                 } else {
                                     // dragOffset must not reset to zero until flingOffset has
                                     // actually taken over the same value — doing it in the other
