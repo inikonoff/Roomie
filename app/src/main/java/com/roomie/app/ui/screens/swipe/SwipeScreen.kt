@@ -581,16 +581,24 @@ private fun SwipeCardSlot(
                                 val maxPanX = cardWidthPx * (scale.value - 1f) / 2f
                                 val maxPanY = cardHeightPx * (scale.value - 1f) / 2f
                                 val newPan = zoomPan.value + delta
-                                // No scope.launch here — this callback already runs inside the
-                                // gesture's own suspend loop (detectSwipeOrLongPressZoom), so a
-                                // direct snapTo applies immediately instead of queuing a fresh
-                                // coroutine per pointer-move event (same fix as the plain drag).
-                                zoomPan.snapTo(
-                                    Offset(
-                                        newPan.x.coerceIn(-maxPanX, maxPanX),
-                                        newPan.y.coerceIn(-maxPanY, maxPanY),
-                                    ),
-                                )
+                                // scope.launch is required here, not just an optimization detail:
+                                // this callback runs inside awaitEachGesture's restricted-suspension
+                                // coroutine (AwaitPointerEventScope), which the Kotlin compiler only
+                                // allows to call suspend functions on that same receiver type —
+                                // Animatable.snapTo is a suspend member of an unrelated type, so
+                                // calling it directly here is a compile error ("Restricted suspending
+                                // functions can only invoke member or extension suspending functions
+                                // on their restricted coroutine scope"), not just a style choice.
+                                // launch{} starts a genuinely separate coroutine to escape that
+                                // restriction, same as this code did before.
+                                scope.launch {
+                                    zoomPan.snapTo(
+                                        Offset(
+                                            newPan.x.coerceIn(-maxPanX, maxPanX),
+                                            newPan.y.coerceIn(-maxPanY, maxPanY),
+                                        ),
+                                    )
+                                }
                             },
                             onZoomEnd = {
                                 // A quick peek, not a decision: as soon as the finger lifts, the
@@ -621,7 +629,7 @@ private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
     onDrag: (Offset) -> Unit,
     onDragEnd: () -> Unit,
     onZoomStart: (TransformOrigin) -> Unit,
-    onZoomPan: suspend (Offset) -> Unit,
+    onZoomPan: (Offset) -> Unit,
     onZoomEnd: () -> Unit,
 ) {
     awaitEachGesture {
