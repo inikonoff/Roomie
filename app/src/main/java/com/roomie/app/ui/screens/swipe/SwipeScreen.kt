@@ -49,7 +49,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.TransformOrigin
@@ -181,6 +180,8 @@ fun SwipeScreen(
                     else -> CardStack(
                         stack = uiState.stack,
                         animationStyle = uiState.cardAnimationStyle,
+                        cardCornerRadiusDp = uiState.cardCornerRadiusDp,
+                        cardBorderWidthDp = uiState.cardBorderWidthDp,
                         onSwiped = viewModel::swipe,
                     )
                 }
@@ -331,6 +332,8 @@ private fun fitSize(ratio: Float, maxWidth: Dp, maxHeight: Dp): Pair<Dp, Dp> {
 private fun CardStack(
     stack: List<MediaGroup>,
     animationStyle: CardAnimationStyle,
+    cardCornerRadiusDp: Int,
+    cardBorderWidthDp: Float,
     onSwiped: (SwipeDirection) -> Unit,
 ) {
     var exiting by remember { mutableStateOf<ExitingCardState?>(null) }
@@ -382,6 +385,8 @@ private fun CardStack(
                     cardWidth = w,
                     cardHeight = h,
                     animationStyle = animationStyle,
+                    cardCornerRadiusDp = cardCornerRadiusDp,
+                    cardBorderWidthDp = cardBorderWidthDp,
                     exitDirection = if (role == CardRole.Exiting) exiting?.direction else null,
                     exitOffset = if (role == CardRole.Exiting) exiting?.offset else null,
                     onCommitted = { direction, releaseOffset ->
@@ -473,6 +478,8 @@ private fun SwipeCardSlot(
     cardWidth: Dp,
     cardHeight: Dp,
     animationStyle: CardAnimationStyle,
+    cardCornerRadiusDp: Int,
+    cardBorderWidthDp: Float,
     exitDirection: SwipeDirection?,
     exitOffset: Offset?,
     onCommitted: (SwipeDirection, Offset) -> Unit,
@@ -524,9 +531,11 @@ private fun SwipeCardSlot(
     SwipeCard(
         group = group,
         isZoomed = isZoomed,
+        showBorder = role == CardRole.Top,
+        cornerRadiusDp = cardCornerRadiusDp,
+        borderWidthDp = cardBorderWidthDp,
         modifier = Modifier
             .size(cardWidth, cardHeight)
-            .then(if (role == CardRole.Behind) Modifier.scale(0.97f) else Modifier)
             .graphicsLayer {
                 transformOrigin = zoomOrigin
                 val renderOffset = dragOffset + flingOffset.value

@@ -110,6 +110,14 @@ class SettingsViewModel(
         viewModelScope.launch { settingsRepository.setEdgePaddingDp(value) }
     }
 
+    fun setCardCornerRadiusDp(value: Int) {
+        viewModelScope.launch { settingsRepository.setCardCornerRadiusDp(value) }
+    }
+
+    fun setCardBorderWidthDp(value: Float) {
+        viewModelScope.launch { settingsRepository.setCardBorderWidthDp(value) }
+    }
+
     fun applyGesturePreset(preset: SwipeGesturePreset) {
         viewModelScope.launch {
             settingsRepository.setSwipeActions(

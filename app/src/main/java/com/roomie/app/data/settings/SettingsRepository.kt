@@ -3,6 +3,7 @@ package com.roomie.app.data.settings
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -39,6 +40,8 @@ class SettingsRepository(private val context: Context) {
         val CARD_ANIMATION_STYLE = stringPreferencesKey("card_animation_style")
         val LANGUAGE_MODE = stringPreferencesKey("language_mode")
         val EDGE_PADDING_DP = intPreferencesKey("edge_padding_dp")
+        val CARD_CORNER_RADIUS_DP = intPreferencesKey("card_corner_radius_dp")
+        val CARD_BORDER_WIDTH_DP = floatPreferencesKey("card_border_width_dp")
     }
 
     val settings: Flow<RoomieSettings> = context.dataStore.data.map { prefs ->
@@ -66,6 +69,8 @@ class SettingsRepository(private val context: Context) {
                 ?: defaults.cardAnimationStyle,
             languageMode = prefs[Keys.LANGUAGE_MODE]?.let { LanguageMode.valueOf(it) } ?: defaults.languageMode,
             edgePaddingDp = prefs[Keys.EDGE_PADDING_DP] ?: defaults.edgePaddingDp,
+            cardCornerRadiusDp = prefs[Keys.CARD_CORNER_RADIUS_DP] ?: defaults.cardCornerRadiusDp,
+            cardBorderWidthDp = prefs[Keys.CARD_BORDER_WIDTH_DP] ?: defaults.cardBorderWidthDp,
         )
     }
 
@@ -157,6 +162,16 @@ class SettingsRepository(private val context: Context) {
     suspend fun setEdgePaddingDp(value: Int) {
         require(value in RoomieSettings.MIN_EDGE_PADDING_DP..RoomieSettings.MAX_EDGE_PADDING_DP)
         context.dataStore.edit { it[Keys.EDGE_PADDING_DP] = value }
+    }
+
+    suspend fun setCardCornerRadiusDp(value: Int) {
+        require(value in RoomieSettings.MIN_CARD_CORNER_RADIUS_DP..RoomieSettings.MAX_CARD_CORNER_RADIUS_DP)
+        context.dataStore.edit { it[Keys.CARD_CORNER_RADIUS_DP] = value }
+    }
+
+    suspend fun setCardBorderWidthDp(value: Float) {
+        require(value in RoomieSettings.MIN_CARD_BORDER_WIDTH_DP..RoomieSettings.MAX_CARD_BORDER_WIDTH_DP)
+        context.dataStore.edit { it[Keys.CARD_BORDER_WIDTH_DP] = value }
     }
 
     /** One saved period filter per folder (keyed by bucketId; `null` is the "All photos" bucket) —

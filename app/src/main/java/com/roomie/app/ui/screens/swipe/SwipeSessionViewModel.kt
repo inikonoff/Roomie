@@ -49,6 +49,8 @@ data class SwipeUiState(
     val isStackExhausted: Boolean = false,
     val cardAnimationStyle: CardAnimationStyle = CardAnimationStyle.CLASSIC,
     val edgePaddingDp: Int = 24,
+    val cardCornerRadiusDp: Int = 32,
+    val cardBorderWidthDp: Float = 1f,
     /** Size of the whole folder this session started from (including anything already skipped
      *  past via "start at this photo"), for the "12 of 345" position counter. */
     val totalCount: Int = 0,
@@ -139,6 +141,8 @@ class SwipeSessionViewModel(
                         hasReachedLimit = settings.hasReachedSwipeLimit,
                         cardAnimationStyle = settings.cardAnimationStyle,
                         edgePaddingDp = settings.edgePaddingDp,
+                        cardCornerRadiusDp = settings.cardCornerRadiusDp,
+                        cardBorderWidthDp = settings.cardBorderWidthDp,
                         monetizationEnabled = settings.monetizationEnabled,
                         gesturePreset = SwipeGesturePreset.matching(settings),
                     )

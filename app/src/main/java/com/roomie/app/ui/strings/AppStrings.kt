@@ -68,6 +68,10 @@ interface AppStrings {
     val animationFade: String
     val animationShrink: String
     val edgePadding: String
+    // Temporary — see the Settings screen's own "temporary" block.
+    val tempCardTuningSection: String
+    val cardCornerRadius: String
+    val cardBorderWidth: String
     val sectionSwipeGestures: String
     val presetClassic: String
     val presetBrowseDeleteUp: String
@@ -174,6 +178,9 @@ object EnglishStrings : AppStrings {
     override val animationFade = "Fade"
     override val animationShrink = "Shrink"
     override val edgePadding = "Padding"
+    override val tempCardTuningSection = "Temporary — card corner/border tuning"
+    override val cardCornerRadius = "Corner radius"
+    override val cardBorderWidth = "Border width"
     override val sectionSwipeGestures = "Swipe gestures"
     override val presetClassic = "Classic"
     override val presetBrowseDeleteUp = "Browse"
@@ -276,6 +283,9 @@ object RussianStrings : AppStrings {
     override val animationFade = "Затухание"
     override val animationShrink = "Сжатие"
     override val edgePadding = "Отступ"
+    override val tempCardTuningSection = "Временно — подбор радиуса/обводки карточки"
+    override val cardCornerRadius = "Радиус угла"
+    override val cardBorderWidth = "Толщина обводки"
     override val sectionSwipeGestures = "Жесты свайпа"
     override val presetClassic = "Классика"
     override val presetBrowseDeleteUp = "Обзор"

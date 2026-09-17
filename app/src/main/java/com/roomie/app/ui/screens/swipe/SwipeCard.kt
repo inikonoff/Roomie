@@ -1,6 +1,7 @@
 package com.roomie.app.ui.screens.swipe
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -36,7 +37,6 @@ import coil3.size.Size
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.ui.components.InlineVideoPlayer
 import com.roomie.app.ui.strings.LocalAppStrings
-import com.roomie.app.ui.theme.CardShape
 import java.util.concurrent.TimeUnit
 
 @Composable
@@ -44,16 +44,30 @@ fun SwipeCard(
     group: MediaGroup,
     modifier: Modifier = Modifier,
     isZoomed: Boolean = false,
+    showBorder: Boolean = false,
+    cornerRadiusDp: Int = 32,
+    borderWidthDp: Float = 1f,
 ) {
     val strings = LocalAppStrings.current
     // Resets to the thumbnail whenever the card changes, so a new photo/video never inherits the
     // previous one's "currently playing" state.
     var isPlayingVideo by remember(group.key) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(cornerRadiusDp.dp)
 
     BoxWithConstraints(
         modifier = modifier
-            .clip(CardShape)
-            .background(MaterialTheme.colorScheme.surface, CardShape),
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface, shape)
+            // A thin seam between the top card and whatever's behind it — appears the instant a
+            // card becomes top, no fade/thickness animation. colorScheme.background (not a bright
+            // accent) reads as a gap between cards, not a decorative frame.
+            .then(
+                if (showBorder && borderWidthDp > 0f) {
+                    Modifier.border(borderWidthDp.dp, MaterialTheme.colorScheme.background, shape)
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         if (group.cover.isVideo && isPlayingVideo) {
             InlineVideoPlayer(

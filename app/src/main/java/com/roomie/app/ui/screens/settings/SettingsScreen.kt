@@ -224,6 +224,15 @@ fun SettingsScreen(
 
                 EdgePaddingSlider(strings, settings.edgePaddingDp, viewModel::setEdgePaddingDp)
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // TODO: временный блок для подбора радиуса/обводки, убрать после решения
+            SettingsCard {
+                SectionTitle(strings.tempCardTuningSection)
+                CardCornerRadiusSlider(strings, settings.cardCornerRadiusDp, viewModel::setCardCornerRadiusDp)
+                CardBorderWidthSlider(strings, settings.cardBorderWidthDp, viewModel::setCardBorderWidthDp)
+            }
         }
     }
 }
@@ -466,6 +475,40 @@ private fun EdgePaddingSlider(strings: AppStrings, currentDp: Int, onChanged: (I
             onValueChange = { onChanged(it.roundToInt()) },
             valueRange = RoomieSettings.MIN_EDGE_PADDING_DP.toFloat()..RoomieSettings.MAX_EDGE_PADDING_DP.toFloat(),
             steps = RoomieSettings.MAX_EDGE_PADDING_DP - RoomieSettings.MIN_EDGE_PADDING_DP - 1,
+        )
+    }
+}
+
+/** Temporary — see `strings.tempCardTuningSection`'s own TODO. */
+@Composable
+private fun CardCornerRadiusSlider(strings: AppStrings, currentDp: Int, onChanged: (Int) -> Unit) {
+    Column(modifier = Modifier.padding(top = 12.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(strings.cardCornerRadius, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text("$currentDp", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+        }
+        Slider(
+            value = currentDp.toFloat(),
+            onValueChange = { onChanged(it.roundToInt()) },
+            valueRange = RoomieSettings.MIN_CARD_CORNER_RADIUS_DP.toFloat()..RoomieSettings.MAX_CARD_CORNER_RADIUS_DP.toFloat(),
+            steps = RoomieSettings.MAX_CARD_CORNER_RADIUS_DP - RoomieSettings.MIN_CARD_CORNER_RADIUS_DP - 1,
+        )
+    }
+}
+
+/** Temporary — see `strings.tempCardTuningSection`'s own TODO. */
+@Composable
+private fun CardBorderWidthSlider(strings: AppStrings, currentDp: Float, onChanged: (Float) -> Unit) {
+    Column(modifier = Modifier.padding(top = 12.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(strings.cardBorderWidth, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text("%.1f".format(currentDp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+        }
+        Slider(
+            value = currentDp,
+            onValueChange = onChanged,
+            valueRange = RoomieSettings.MIN_CARD_BORDER_WIDTH_DP..RoomieSettings.MAX_CARD_BORDER_WIDTH_DP,
+            steps = 15, // 0.25dp increments across the 0-4dp range
         )
     }
 }
