@@ -9,6 +9,7 @@ import coil3.memory.MemoryCache
 import coil3.request.crossfade
 import coil3.video.VideoFrameDecoder
 import com.roomie.app.work.TrashCleanupWorker
+import kotlinx.coroutines.Dispatchers
 
 class RoomieApplication : Application(), SingletonImageLoader.Factory {
 
@@ -50,5 +51,10 @@ class RoomieApplication : Application(), SingletonImageLoader.Factory {
                     .build()
             }
             .crossfade(true)
+            // A fast fling through a grid can otherwise queue dozens of decodes at once — capping
+            // how many run concurrently is what turns that into a steady trickle of ~150-300ms
+            // frame spikes into a smooth scroll, at the cost of slightly later delivery per tile
+            // (masked by the surface-colored placeholder every grid tile already sits on).
+            .decoderDispatcher(Dispatchers.IO.limitedParallelism(3))
             .build()
 }

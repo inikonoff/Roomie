@@ -22,6 +22,8 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 private const val VIDEO_THUMBNAIL_PX = 320
@@ -43,6 +45,15 @@ private const val GRID_THUMBNAIL_PX = 320
  * leave tiles blank — the grid was re-decoding faster than it could keep up with scrolling.
  */
 private val videoThumbnailCache = LruCache<String, Bitmap>(300)
+
+/** Bounds how many `loadThumbnail` (MediaMetadataRetriever-backed) calls run at once — a fast
+ *  fling through a video-heavy folder can otherwise fire off a dozen of these together, each a
+ *  real frame-extraction decode, which is what produced this app's worst multi-second frames.
+ *  Coil's own decode work (the photo path) is capped the same way via the shared ImageLoader's
+ *  decoderDispatcher — see RoomieApplication. A cell that scrolls away while waiting on this
+ *  semaphore has its produceState coroutine cancelled by Compose itself (LazyVerticalGrid disposes
+ *  off-screen items), which withPermit honors — no manual job-cancellation bookkeeping needed. */
+private val videoDecodeLimiter = Semaphore(3)
 
 /**
  * Grid-safe thumbnail for a gallery item. Photos go through Coil as before, but videos use
@@ -76,13 +87,15 @@ fun MediaThumbnail(
                         fromDisk
                     } else {
                         ThumbnailDiskCache.logMiss(cacheKey)
-                        runCatching {
-                            context.contentResolver.loadThumbnail(
-                                uri,
-                                Size(VIDEO_THUMBNAIL_PX, VIDEO_THUMBNAIL_PX),
-                                null,
-                            )
-                        }.getOrNull()?.also { bmp -> ThumbnailDiskCache.writeAsync(cacheFile, bmp) }
+                        videoDecodeLimiter.withPermit {
+                            runCatching {
+                                context.contentResolver.loadThumbnail(
+                                    uri,
+                                    Size(VIDEO_THUMBNAIL_PX, VIDEO_THUMBNAIL_PX),
+                                    null,
+                                )
+                            }.getOrNull()
+                        }?.also { bmp -> ThumbnailDiskCache.writeAsync(cacheFile, bmp) }
                     }
                 }?.also { videoThumbnailCache.put(key, it) }
             }
