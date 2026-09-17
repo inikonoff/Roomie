@@ -21,11 +21,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -230,8 +232,34 @@ fun SettingsScreen(
             // TODO: временный блок для подбора радиуса/обводки, убрать после решения
             SettingsCard {
                 SectionTitle(strings.tempCardTuningSection)
-                CardCornerRadiusSlider(strings, settings.cardCornerRadiusDp, viewModel::setCardCornerRadiusDp)
-                CardBorderWidthSlider(strings, settings.cardBorderWidthDp, viewModel::setCardBorderWidthDp)
+                StepperRow(
+                    label = strings.cardCornerRadius,
+                    value = "${settings.cardCornerRadiusDp}",
+                    onDecrement = {
+                        viewModel.setCardCornerRadiusDp(
+                            (settings.cardCornerRadiusDp - 1).coerceAtLeast(RoomieSettings.MIN_CARD_CORNER_RADIUS_DP),
+                        )
+                    },
+                    onIncrement = {
+                        viewModel.setCardCornerRadiusDp(
+                            (settings.cardCornerRadiusDp + 1).coerceAtMost(RoomieSettings.MAX_CARD_CORNER_RADIUS_DP),
+                        )
+                    },
+                )
+                StepperRow(
+                    label = strings.cardBorderWidth,
+                    value = "%.1f".format(settings.cardBorderWidthDp),
+                    onDecrement = {
+                        viewModel.setCardBorderWidthDp(
+                            (settings.cardBorderWidthDp - 0.5f).coerceAtLeast(RoomieSettings.MIN_CARD_BORDER_WIDTH_DP),
+                        )
+                    },
+                    onIncrement = {
+                        viewModel.setCardBorderWidthDp(
+                            (settings.cardBorderWidthDp + 0.5f).coerceAtMost(RoomieSettings.MAX_CARD_BORDER_WIDTH_DP),
+                        )
+                    },
+                )
             }
         }
     }
@@ -479,37 +507,44 @@ private fun EdgePaddingSlider(strings: AppStrings, currentDp: Int, onChanged: (I
     }
 }
 
-/** Temporary — see `strings.tempCardTuningSection`'s own TODO. */
+/** Temporary — see `strings.tempCardTuningSection`'s own TODO. A stepper rather than a slider:
+ *  both ranges are small (8-40, 0-4) and a slider's fine-drag precision isn't worth the extra
+ *  gesture surface while these are still being tuned by feel. */
 @Composable
-private fun CardCornerRadiusSlider(strings: AppStrings, currentDp: Int, onChanged: (Int) -> Unit) {
-    Column(modifier = Modifier.padding(top = 12.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(strings.cardCornerRadius, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Text("$currentDp", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+private fun StepperRow(label: String, value: String, onDecrement: () -> Unit, onIncrement: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        IconButton(onClick = onDecrement) {
+            Icon(Icons.Filled.Remove, contentDescription = null)
         }
-        Slider(
-            value = currentDp.toFloat(),
-            onValueChange = { onChanged(it.roundToInt()) },
-            valueRange = RoomieSettings.MIN_CARD_CORNER_RADIUS_DP.toFloat()..RoomieSettings.MAX_CARD_CORNER_RADIUS_DP.toFloat(),
-            steps = RoomieSettings.MAX_CARD_CORNER_RADIUS_DP - RoomieSettings.MIN_CARD_CORNER_RADIUS_DP - 1,
+        Text(
+            value,
+            modifier = Modifier.width(40.dp),
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyLarge,
         )
+        IconButton(onClick = onIncrement) {
+            Icon(Icons.Filled.Add, contentDescription = null)
+        }
     }
 }
 
-/** Temporary — see `strings.tempCardTuningSection`'s own TODO. */
+/** A tappable label-only row that navigates elsewhere (e.g. to the Logs screen) — like
+ *  [LabelValueRow] but without a value, just a chevron. */
 @Composable
-private fun CardBorderWidthSlider(strings: AppStrings, currentDp: Float, onChanged: (Float) -> Unit) {
-    Column(modifier = Modifier.padding(top = 12.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(strings.cardBorderWidth, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Text("%.1f".format(currentDp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
-        }
-        Slider(
-            value = currentDp,
-            onValueChange = onChanged,
-            valueRange = RoomieSettings.MIN_CARD_BORDER_WIDTH_DP..RoomieSettings.MAX_CARD_BORDER_WIDTH_DP,
-            steps = 15, // 0.25dp increments across the 0-4dp range
-        )
+private fun NavigationRow(label: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        ChevronIcon()
     }
 }
 
