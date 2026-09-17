@@ -551,9 +551,14 @@ private fun DraggableCard(
                             // independently as an overlay (see ExitingCard).
                             onSwiped(direction, current)
                         } else {
-                            dragOffset = Offset.Zero
+                            // dragOffset must not reset to zero until flingOffset has actually
+                            // taken over the same value — doing it in the other order (as before)
+                            // rendered one frame at the visual center, then jumped back out to the
+                            // release point once the launched snapTo caught up, a visible pop on
+                            // every cancelled swipe.
                             scope.launch {
                                 flingOffset.snapTo(current)
+                                dragOffset = Offset.Zero
                                 flingOffset.animateTo(Offset.Zero, SWIPE_SPRING)
                             }
                         }
