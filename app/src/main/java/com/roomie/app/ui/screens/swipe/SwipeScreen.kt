@@ -4,7 +4,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -48,8 +47,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.TransformOrigin
@@ -80,13 +79,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.hypot
-
-/** While a card sits "behind" the top one, it's rendered at reduced opacity — full-opacity would
- *  otherwise show a hard, fully-formed duplicate photo peeking out around the top card whenever
- *  the two have different aspect ratios (e.g. a portrait photo behind a landscape one). It fades
- *  up to full opacity over [ENTRANCE_FADE_MS] once promoted to the top. */
-private const val BEHIND_CARD_ALPHA = 0.45f
-private const val ENTRANCE_FADE_MS = 200
 
 private const val SWIPE_THRESHOLD_DP = 120f
 private const val MAX_PEEK_ZOOM = 2.5f
@@ -350,21 +342,19 @@ private fun CardStack(
         }
 
         if (behind != null) {
-            // Rendered at the exact same size/opacity it will have once promoted to the top spot
-            // (no scale-down/dim "peek" look) — anything different between the two would show up
-            // as a pop/jump the instant the card above it is swiped away.
+            // Fully opaque, static scale (no animation, no alpha) — the semi-transparent "peek"
+            // look this used to have, plus the opaque full-stack background box below it, existed
+            // only to hide a mismatched-orientation neighbor showing through during the top card's
+            // entrance-fade. Removing the fade (see DraggableCard) removes the reason for either:
+            // an offscreen alpha-blend layer at the exact moment a card changes was itself a real
+            // jank contributor, not just a cosmetic nicety. A behind card of a different aspect
+            // ratio peeking out slightly at the edges is now the accepted look, not a bug to mask.
             val (w, h) = fitSize(behind.cover.aspectRatio, maxWidth, maxHeight)
             SwipeCard(
                 group = behind,
-                modifier = Modifier.size(w, h).alpha(BEHIND_CARD_ALPHA),
+                modifier = Modifier.size(w, h).scale(0.97f),
             )
         }
-
-        // Covers the entire stack area (not just the top card's own fitSize) so that while the top
-        // card is mid entrance-fade — semi-transparent — nothing of "behind" can show through past
-        // the top card's own edges either, however differently the two are oriented/sized (e.g. a
-        // portrait card behind a landscape one, or vice versa).
-        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
 
         if (top != null) {
             val (w, h) = fitSize(top.cover.aspectRatio, maxWidth, maxHeight)
@@ -407,25 +397,24 @@ private fun GraphicsLayerScope.applySwipeStyle(
     offset: Offset,
     thresholdPx: Float,
     baseScale: Float,
-    entranceAlpha: Float = 1f,
 ) {
     val travelled = (hypot(offset.x, offset.y) / FLING_DISTANCE).coerceIn(0f, 1f)
     when (style) {
         CardAnimationStyle.CLASSIC -> {
             rotationZ = (offset.x / thresholdPx) * 12f
-            alpha = entranceAlpha
+            alpha = 1f
             scaleX = baseScale
             scaleY = baseScale
         }
         CardAnimationStyle.FADE -> {
             rotationZ = 0f
-            alpha = (1f - travelled) * entranceAlpha
+            alpha = 1f - travelled
             scaleX = baseScale
             scaleY = baseScale
         }
         CardAnimationStyle.SHRINK -> {
             rotationZ = 0f
-            alpha = entranceAlpha
+            alpha = 1f
             val shrink = 1f - travelled * 0.4f
             scaleX = baseScale * shrink
             scaleY = baseScale * shrink
@@ -505,10 +494,6 @@ private fun DraggableCard(
     val scale = remember(group.key) { Animatable(1f) }
     val zoomPan = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
     var zoomOrigin by remember(group.key) { mutableStateOf(TransformOrigin.Center) }
-    // Every newly-promoted top card starts at BEHIND_CARD_ALPHA (matching how it was just
-    // rendered as the "behind" card) and eases up to fully opaque, instead of snapping instantly
-    // — that snap is what made a mismatched-aspect-ratio neighbor look like it was "sticking out".
-    val entranceAlpha = remember(group.key) { Animatable(BEHIND_CARD_ALPHA) }
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     var pastThreshold by remember(group.key) { mutableStateOf(false) }
@@ -519,10 +504,6 @@ private fun DraggableCard(
     val thresholdPx = with(density) { SWIPE_THRESHOLD_DP.dp.toPx() }
     val cardWidthPx = with(density) { cardWidth.toPx() }
     val cardHeightPx = with(density) { cardHeight.toPx() }
-
-    LaunchedEffect(group.key) {
-        entranceAlpha.animateTo(1f, tween(ENTRANCE_FADE_MS))
-    }
 
     SwipeCard(
         group = group,
@@ -539,7 +520,6 @@ private fun DraggableCard(
                     renderOffset,
                     thresholdPx,
                     baseScale = scale.value,
-                    entranceAlpha = entranceAlpha.value,
                 )
             }
             .pointerInput(group.key) {
