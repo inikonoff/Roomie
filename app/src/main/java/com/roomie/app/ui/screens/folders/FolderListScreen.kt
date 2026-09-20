@@ -1,7 +1,11 @@
 package com.roomie.app.ui.screens.folders
 
 import android.Manifest
+import android.database.ContentObserver
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -35,10 +39,13 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +59,7 @@ import com.roomie.app.ui.components.rememberAllowThumbnailDecode
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.ContainerShape
+import kotlinx.coroutines.delay
 
 @Composable
 fun FolderListScreen(
@@ -89,6 +97,28 @@ fun FolderListScreen(
         } else {
             permissionLauncher.launch(requiredPermissions)
         }
+    }
+
+    // Otherwise a photo taken in the system Camera app (or added by any other app) never shows up
+    // here until the user leaves this screen and comes back, or pulls to refresh manually — nothing
+    // was watching MediaStore for changes made outside Roomie itself. Debounced: a burst import (or
+    // Roomie's own move/delete calls, which also touch these same URIs) fires this many times in a
+    // row, and each one should collapse into a single quiet refresh rather than one per change.
+    var mediaChangeTick by remember { mutableStateOf(0L) }
+    DisposableEffect(Unit) {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                mediaChangeTick = System.currentTimeMillis()
+            }
+        }
+        context.contentResolver.registerContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observer)
+        context.contentResolver.registerContentObserver(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, observer)
+        onDispose { context.contentResolver.unregisterContentObserver(observer) }
+    }
+    LaunchedEffect(mediaChangeTick) {
+        if (mediaChangeTick == 0L) return@LaunchedEffect
+        delay(600)
+        viewModel.refresh()
     }
 
     Scaffold(
