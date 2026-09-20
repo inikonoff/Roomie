@@ -125,6 +125,16 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.SWIPE_DOWN_ACTION] = action.name }
     }
 
+    /** Whether up/down have ever been written — individually (the always-open dropdowns in
+     *  Settings) or via a previous preset apply — as opposed to still sitting at [RoomieSettings]'s
+     *  built-in defaults because nothing has touched them yet. A preset apply uses this to decide
+     *  whether it's still safe to also set up/down to its own defaults (first run only) or must
+     *  leave them alone (the user, or an earlier preset apply, already has an opinion). */
+    suspend fun hasCustomSwipeUpDown(): Boolean {
+        val prefs = context.dataStore.data.first()
+        return prefs.contains(Keys.SWIPE_UP_ACTION) || prefs.contains(Keys.SWIPE_DOWN_ACTION)
+    }
+
     /** Sets all four directions in one write, for a gesture-scheme preset in Settings. */
     suspend fun setSwipeActions(
         left: SwipeCardAction,

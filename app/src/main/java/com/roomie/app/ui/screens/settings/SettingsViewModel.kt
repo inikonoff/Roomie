@@ -118,14 +118,24 @@ class SettingsViewModel(
         viewModelScope.launch { settingsRepository.setCardBorderWidthDp(value) }
     }
 
+    /** Tapping the already-active preset is a no-op — nothing to change, and writing anyway is
+     *  exactly what used to silently reset any up/down customization on a redundant tap. Otherwise,
+     *  only left/right ever change here: up/down are freely editable on their own (see the always-
+     *  open dropdowns in Settings) and switching Classic <-> Browse must not clobber whatever the
+     *  user has already set there. The one exception is the very first preset ever applied, before
+     *  up/down have been touched at all (fresh install) — that still seeds them with this preset's
+     *  own defaults, or Browse's out-of-the-box up/down would otherwise stay stuck at
+     *  RoomieSettings' built-in (Classic-shaped) defaults forever. */
     fun applyGesturePreset(preset: SwipeGesturePreset) {
+        val current = settings.value
+        if (SwipeGesturePreset.matching(current) == preset) return
         viewModelScope.launch {
-            settingsRepository.setSwipeActions(
-                left = preset.left,
-                right = preset.right,
-                up = preset.up,
-                down = preset.down,
-            )
+            settingsRepository.setSwipeLeftAction(preset.left)
+            settingsRepository.setSwipeRightAction(preset.right)
+            if (!settingsRepository.hasCustomSwipeUpDown()) {
+                settingsRepository.setSwipeUpAction(preset.up)
+                settingsRepository.setSwipeDownAction(preset.down)
+            }
         }
     }
 }
