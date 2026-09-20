@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.roomie.app.ui.screens.swipe.SummaryUiState
 import com.roomie.app.ui.strings.LocalAppStrings
-import com.roomie.app.util.formatBytes
 
 @Composable
 fun SummaryScreen(
@@ -41,11 +40,18 @@ fun SummaryScreen(
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(top = 8.dp),
         )
-        Text(
-            strings.bytesFreed(formatBytes(summary.freedBytes)),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.primary,
-        )
+        // Deliberately no "N bytes freed" here — these files are still sitting in Trash, on disk,
+        // until it's actually emptied (see TrashFolderScreen for where a real freed-bytes figure
+        // belongs). Session counts above are accurate as-is; a byte figure here would just be a
+        // number that describes nothing that's actually happened to storage yet.
+        if (summary.itemCount > 0) {
+            Text(
+                strings.pendingTrashCleanup,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
         Button(onClick = onDone, modifier = Modifier.padding(top = 32.dp)) {
             Text(strings.done)
         }

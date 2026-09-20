@@ -123,6 +123,7 @@ interface AppStrings {
     val allCleanedUp: String
     fun itemsRemoved(count: Int): String
     fun bytesFreed(formatted: String): String
+    val pendingTrashCleanup: String
     val done: String
 
     // Swipe limit
@@ -236,6 +237,7 @@ object EnglishStrings : AppStrings {
     override val allCleanedUp = "All cleaned up!"
     override fun itemsRemoved(count: Int) = "$count item${if (count == 1) "" else "s"} removed"
     override fun bytesFreed(formatted: String) = "$formatted freed"
+    override val pendingTrashCleanup = "Files are in Trash — space frees up once you empty it."
     override val done = "Done"
 
     override val freeSwipeLimitReached = "Free swipe limit reached"
@@ -350,6 +352,7 @@ object RussianStrings : AppStrings {
     override val allCleanedUp = "Всё убрано!"
     override fun itemsRemoved(count: Int) = "Удалено объектов: $count"
     override fun bytesFreed(formatted: String) = "Освобождено: $formatted"
+    override val pendingTrashCleanup = "Файлы в корзине — место освободится после очистки."
     override val done = "Готово"
 
     override val freeSwipeLimitReached = "Достигнут лимит бесплатных свайпов"

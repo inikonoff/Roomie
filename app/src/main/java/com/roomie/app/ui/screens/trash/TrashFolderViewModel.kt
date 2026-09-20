@@ -44,6 +44,17 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
     private val _deleteProgress = MutableStateFlow<Pair<Int, Int>?>(null)
     val deleteProgress: StateFlow<Pair<Int, Int>?> = _deleteProgress
 
+    /** Set once a real, physical delete actually completes — the only point at which "N freed" is
+     *  true. Null the rest of the time, including while entries just sit soft-trashed (see the
+     *  class doc) or if the user cancels the system confirmation dialog. The screen clears this
+     *  back to null once it's shown the figure. */
+    private val _justFreedBytes = MutableStateFlow<Long?>(null)
+    val justFreedBytes: StateFlow<Long?> = _justFreedBytes
+
+    fun clearJustFreedBytes() {
+        _justFreedBytes.value = null
+    }
+
     fun restore(entry: TrashEntry) {
         viewModelScope.launch { trashRepository.restoreFromTrash(listOf(entry)) }
     }
@@ -63,9 +74,10 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
                     _deleteConfirmationEvents.emit(TrashDeleteRequest(intentSender, valid))
                 } else if (valid.isNotEmpty()) {
                     _deleteProgress.value = 0 to valid.size
-                    trashRepository.permanentlyDelete(valid) { done, total -> _deleteProgress.value = done to total }
+                    val result = trashRepository.permanentlyDelete(valid) { done, total -> _deleteProgress.value = done to total }
                     _deleteProgress.value = null
                     deleteInFlight = false
+                    if (result.freedBytes > 0L) _justFreedBytes.value = result.freedBytes
                 } else {
                     deleteInFlight = false
                 }
@@ -83,9 +95,10 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
     fun onDeleteConfirmed(entries: List<TrashEntry>) {
         viewModelScope.launch {
             _deleteProgress.value = 0 to entries.size
-            trashRepository.confirmSystemDelete(entries) { done, total -> _deleteProgress.value = done to total }
+            val result = trashRepository.confirmSystemDelete(entries) { done, total -> _deleteProgress.value = done to total }
             _deleteProgress.value = null
             deleteInFlight = false
+            if (result.freedBytes > 0L) _justFreedBytes.value = result.freedBytes
         }
     }
 

@@ -31,6 +31,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -54,6 +56,7 @@ import com.roomie.app.ui.components.rememberAllowThumbnailDecode
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.ContainerShape
+import com.roomie.app.util.formatBytes
 
 /**
  * The persistent "Trash" folder shown on the main screen — every file Roomie has soft-trashed
@@ -71,8 +74,18 @@ fun TrashFolderScreen(
 ) {
     val entries by viewModel.entries.collectAsState()
     val deleteProgress by viewModel.deleteProgress.collectAsState()
+    val justFreedBytes by viewModel.justFreedBytes.collectAsState()
     val strings = LocalAppStrings.current
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Only fires once a real, physical delete has actually completed (see the ViewModel doc) —
+    // never on a cancelled confirmation dialog, and never for the soft-trash that happens on swipe.
+    LaunchedEffect(justFreedBytes) {
+        val bytes = justFreedBytes ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(strings.bytesFreed(formatBytes(bytes)))
+        viewModel.clearJustFreedBytes()
+    }
 
     // A permanent delete runs in the ViewModel's own coroutine scope — leaving this screen mid-
     // delete would tear that down and abandon the loop with only some files actually removed, so
@@ -128,6 +141,7 @@ fun TrashFolderScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(strings.trashTitle(entries.size)) },
