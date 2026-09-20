@@ -397,7 +397,17 @@ private fun CardStack(
                         exiting = ExitingCardState(group, direction, releaseOffset)
                         onSwiped(direction)
                     },
-                    onExitFinished = { exiting = null },
+                    // Guarded by group.key: a swipe committed before the previous card's own
+                    // fly-out finished overwrites `exiting` with the new card before the old one's
+                    // LaunchedEffect(exitDirection) below ever calls onExitFinished — its key()
+                    // block simply stops being called on the next recomposition (it's no longer in
+                    // `slots`) and gets disposed, cancelling that effect without running to
+                    // completion. An unconditional `exiting = null` from that cancelled effect's own
+                    // cleanup (see the `finally` below) would then null out the *new* card's
+                    // legitimate exiting state instead, aborting its fly-out mid-animation. Checking
+                    // the key first means only the effect for whichever card `exiting` actually
+                    // still refers to can clear it.
+                    onExitFinished = { if (exiting?.group?.key == group.key) exiting = null },
                 )
             }
         }
@@ -519,11 +529,27 @@ private fun SwipeCardSlot(
     // release. Continuing the *animation* from this same remembered flingOffset (rather than a
     // fresh Animatable) is still what avoids a remount/blip — only the starting value is now an
     // explicit snapshot instead of a live re-read.
-    LaunchedEffect(exitDirection) {
-        if (exitDirection != null && exitOffset != null) {
+    // Keyed on group.key too (not just exitDirection): this slot can be reused for a *different*
+    // card without exitDirection itself changing value (e.g. two commits in the same direction in
+    // a row land on the same key() slot only if the group is reused, which doesn't normally happen
+    // here — but the guard costs nothing and removes the assumption). More importantly, wrapping in
+    // try/finally guarantees onExitFinished() still runs if this effect gets cancelled instead of
+    // completing normally — which happens whenever a second swipe lands before this card's own
+    // fly-out finishes: `exiting` is reassigned to the new card, this card's key() block stops
+    // appearing in CardStack's `slots`, and Compose disposes it (cancelling this coroutine) without
+    // ever reaching the `onExitFinished()` call at the end of the block. Without the finally, that
+    // left `exiting` referring to a group no longer in the stack, in the tree, or anywhere reachable
+    // — CardStack's role-collision guards (`top.key != exitingKey`, etc.) then permanently excluded
+    // whatever *should* have been top from `slots` too, since its key matched the orphaned
+    // exitingKey — the frozen-card symptom. onExitFinished's own group.key check (see CardStack)
+    // keeps this cancellation path from clobbering a legitimately newer exiting card instead.
+    LaunchedEffect(group.key, exitDirection, exitOffset) {
+        if (exitDirection == null || exitOffset == null) return@LaunchedEffect
+        try {
             flingOffset.snapTo(exitOffset)
             dragOffset = Offset.Zero
             flingOffset.animateTo(flingTarget(exitDirection, exitOffset), SWIPE_SPRING)
+        } finally {
             onExitFinished()
         }
     }
