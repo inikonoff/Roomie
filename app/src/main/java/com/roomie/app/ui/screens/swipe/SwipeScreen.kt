@@ -34,6 +34,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -95,6 +97,7 @@ fun SwipeScreen(
     val uiState by viewModel.uiState.collectAsState()
     val strings = LocalAppStrings.current
     val haptic = LocalHapticFeedback.current
+    val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.hasReachedLimit) {
         if (uiState.hasReachedLimit) onLimitReached()
@@ -110,7 +113,14 @@ fun SwipeScreen(
         }
     }
 
+    LaunchedEffect(viewModel) {
+        viewModel.moveTargetMissingEvents.collect {
+            snackbarHostState.showSnackbar(strings.selectMoveFolderPrompt)
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -347,7 +357,7 @@ private fun CardStack(
     animationStyle: CardAnimationStyle,
     cardCornerRadiusDp: Int,
     cardBorderWidthDp: Float,
-    onSwiped: (SwipeDirection) -> Unit,
+    onSwiped: (SwipeDirection) -> Boolean,
 ) {
     var exiting by remember { mutableStateOf<ExitingCardState?>(null) }
 
@@ -403,12 +413,19 @@ private fun CardStack(
                     exitDirection = if (role == CardRole.Exiting) exiting?.direction else null,
                     exitOffset = if (role == CardRole.Exiting) exiting?.offset else null,
                     onCommitted = { direction, releaseOffset ->
-                        // Snapshot offset first, mark this slot as exiting second, only then tell
-                        // the ViewModel — in that order, so the exiting state (and the offset it
-                        // needs) is already set before anything downstream could observe the stack
-                        // without it, which is what a successful-swipe skip/pop would look like.
-                        exiting = ExitingCardState(group, direction, releaseOffset)
-                        onSwiped(direction)
+                        // Ask the ViewModel first: a rejected swipe (e.g. Move-to-folder with no
+                        // target configured — see SwipeSessionViewModel.swipe) must never touch
+                        // `exiting` at all, so the card can spring back to center exactly as if
+                        // the threshold had never been crossed instead of flying off to nowhere.
+                        val accepted = onSwiped(direction)
+                        if (accepted) {
+                            // Snapshot offset first, mark this slot as exiting second — so the
+                            // exiting state (and the offset it needs) is already set before
+                            // anything downstream could observe the stack without it, which is
+                            // what a successful-swipe skip/pop would look like.
+                            exiting = ExitingCardState(group, direction, releaseOffset)
+                        }
+                        accepted
                     },
                     // Guarded by group.key: a swipe committed before the previous card's own
                     // fly-out finished overwrites `exiting` with the new card before the old one's
@@ -505,7 +522,7 @@ private fun SwipeCardSlot(
     cardBorderWidthDp: Float,
     exitDirection: SwipeDirection?,
     exitOffset: Offset?,
-    onCommitted: (SwipeDirection, Offset) -> Unit,
+    onCommitted: (SwipeDirection, Offset) -> Boolean,
     onExitFinished: () -> Unit,
 ) {
     // Written to directly on every pointer-move event instead of through a suspend Animatable —
@@ -618,8 +635,18 @@ private fun SwipeCardSlot(
                                     // stray leftover spring-back coroutine. The actual fly-out
                                     // animation is driven by this same instance's own
                                     // LaunchedEffect, once CardStack's next recomposition flips
-                                    // this slot's role to Exiting with this direction/offset.
-                                    onCommitted(direction, current)
+                                    // this slot's role to Exiting with this direction/offset —
+                                    // but only if the ViewModel actually accepted the swipe; a
+                                    // rejected one (e.g. no Move-to-folder target configured)
+                                    // springs back to center exactly like a below-threshold
+                                    // release below, as if the gesture had not happened.
+                                    if (!onCommitted(direction, current)) {
+                                        scope.launch {
+                                            flingOffset.snapTo(current)
+                                            dragOffset = Offset.Zero
+                                            flingOffset.animateTo(Offset.Zero, SWIPE_SPRING)
+                                        }
+                                    }
                                 } else {
                                     // dragOffset must not reset to zero until flingOffset has
                                     // actually taken over the same value — doing it in the other

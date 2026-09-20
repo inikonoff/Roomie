@@ -109,6 +109,11 @@ class SwipeSessionViewModel(
     private val _browseHistoryExhaustedEvents = MutableSharedFlow<Unit>()
     val browseHistoryExhaustedEvents: SharedFlow<Unit> = _browseHistoryExhaustedEvents
 
+    /** Fired when a Move-to-folder swipe is rejected for having no target folder configured —
+     *  SwipeScreen turns this into a snackbar pointing at Settings. See [swipe]. */
+    private val _moveTargetMissingEvents = MutableSharedFlow<Unit>()
+    val moveTargetMissingEvents: SharedFlow<Unit> = _moveTargetMissingEvents
+
     private val undoHistory = ArrayDeque<SwipeAction>(MAX_UNDO_HISTORY)
 
     /** Cards passed with a "do nothing" (browsing) swipe, so a left-swipe-to-go-back has something
@@ -238,10 +243,13 @@ class SwipeSessionViewModel(
         SwipeDirection.DOWN -> currentSettings.swipeDownAction
     }
 
-    fun swipe(direction: SwipeDirection) {
+    /** Returns whether the swipe was actually committed — SwipeScreen only plays the card's fly-out
+     *  animation on `true`; on `false` it springs the card back to center exactly like a release
+     *  that never crossed the threshold, as if the gesture had not happened. */
+    fun swipe(direction: SwipeDirection): Boolean {
         val state = _uiState.value
-        val group = state.currentGroup ?: return
-        if (state.hasReachedLimit) return
+        val group = state.currentGroup ?: return false
+        if (state.hasReachedLimit) return false
 
         val action = actionFor(direction)
 
@@ -258,7 +266,15 @@ class SwipeSessionViewModel(
             } else {
                 viewModelScope.launch { _browseHistoryExhaustedEvents.emit(Unit) }
             }
-            return
+            return true
+        }
+
+        // Moving needs somewhere to move to. Rejecting here — before touching the stack or undo
+        // history at all — instead of letting requestMove's own null check swallow it silently
+        // used to mean the card was already gone from the session with nothing having happened.
+        if (action == SwipeCardAction.MOVE_TO_FOLDER && currentSettings.moveToFolderBucketId == null) {
+            viewModelScope.launch { _moveTargetMissingEvents.emit(Unit) }
+            return false
         }
 
         when (action) {
@@ -301,6 +317,7 @@ class SwipeSessionViewModel(
 
         pendingSwipeIncrement++
         if (pendingSwipeIncrement >= SWIPE_COUNT_FLUSH_INTERVAL) flushSwipeCount()
+        return true
     }
 
     /** Writes accumulated swipes to DataStore in one edit and resets the local counter. Uses

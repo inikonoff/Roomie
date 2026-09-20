@@ -113,6 +113,7 @@ interface AppStrings {
     val reviewTrash: String
     val folderIsClean: String
     val undo: String
+    val selectMoveFolderPrompt: String
 
     // Trash folder
     fun trashTitle(count: Int): String
@@ -229,6 +230,7 @@ object EnglishStrings : AppStrings {
     override val reviewTrash = "Review trash"
     override val folderIsClean = "Nothing left here — this folder is clean."
     override val undo = "Undo"
+    override val selectMoveFolderPrompt = "Choose a destination folder in Settings first"
 
     override fun trashTitle(count: Int) = "Trash ($count)"
     override val trashIsEmpty = "Trash is empty."
@@ -344,6 +346,7 @@ object RussianStrings : AppStrings {
     override val reviewTrash = "Просмотр корзины"
     override val folderIsClean = "Здесь больше ничего нет — папка чистая."
     override val undo = "Отменить"
+    override val selectMoveFolderPrompt = "Сначала выберите папку назначения в Настройках"
 
     override fun trashTitle(count: Int) = "Корзина ($count)"
     override val trashIsEmpty = "Корзина пуста."
