@@ -54,6 +54,12 @@ data class SwipeUiState(
     /** Size of the whole folder this session started from (including anything already skipped
      *  past via "start at this photo"), for the "12 of 345" position counter. */
     val totalCount: Int = 0,
+    /** [MediaGroup.key] -> its 0-based index in the folder's original load order, fixed for the
+     *  whole session. Backs [currentPosition] directly instead of deriving a position from the
+     *  live stack's length, which broke the moment the stack stopped shrinking by exactly one per
+     *  swipe (Postpone re-inserts at the back without changing stack size; Browse-back/Undo
+     *  re-insert at the front) — see the Roomie_TZ_remaining_after_today.md item A postmortem. */
+    val originalIndexByKey: Map<String, Int> = emptyMap(),
     val deletedCount: Int = 0,
     val deletedBytes: Long = 0L,
     /** Left untouched, whether by an explicit Keep or a "do nothing" browse swipe — both leave the
@@ -72,8 +78,9 @@ data class SwipeUiState(
 ) {
     val currentGroup: MediaGroup? get() = stack.firstOrNull()
 
-    /** 1-based position of [currentGroup] within the original folder ordering. */
-    val currentPosition: Int get() = totalCount - stack.size + 1
+    /** 1-based position of [currentGroup] within the original folder ordering. Looked up by key
+     *  rather than derived from stack length — see [originalIndexByKey]. */
+    val currentPosition: Int get() = currentGroup?.let { originalIndexByKey[it.key] }?.plus(1) ?: totalCount
 }
 
 data class SummaryUiState(val itemCount: Int, val freedBytes: Long)
@@ -182,6 +189,7 @@ class SwipeSessionViewModel(
                 ?.takeIf { it >= 0 }
                 ?: 0
             val stack = groups.drop(startIndex)
+            val originalIndexByKey = groups.withIndex().associate { (index, group) -> group.key to index }
             _uiState.update {
                 it.copy(
                     stack = stack,
@@ -189,6 +197,7 @@ class SwipeSessionViewModel(
                     canUndo = false,
                     isStackExhausted = stack.isEmpty(),
                     totalCount = groups.size,
+                    originalIndexByKey = originalIndexByKey,
                     deletedCount = 0,
                     deletedBytes = 0L,
                     keptCount = 0,
