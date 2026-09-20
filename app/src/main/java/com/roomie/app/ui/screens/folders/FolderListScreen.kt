@@ -33,6 +33,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -111,6 +112,8 @@ fun FolderListScreen(
                 modifier = Modifier.padding(padding),
                 folders = uiState.folders,
                 trashCount = trashCount,
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = viewModel::refresh,
                 onOpenFolder = onOpenFolder,
                 onOpenTrash = onOpenTrash,
             )
@@ -151,16 +154,23 @@ private fun PermissionRationale(strings: AppStrings, modifier: Modifier = Modifi
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FolderGrid(
     strings: AppStrings,
     modifier: Modifier = Modifier,
     folders: List<GalleryFolder>,
     trashCount: Int,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
     onOpenFolder: (Long?, String) -> Unit,
     onOpenTrash: () -> Unit,
 ) {
-    Column(modifier = modifier.fillMaxSize()) {
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
+        modifier = modifier.fillMaxSize(),
+    ) {
         val gridState = rememberLazyGridState()
         val allowDecode = rememberAllowThumbnailDecode(gridState.isScrollInProgress)
         LazyVerticalGrid(

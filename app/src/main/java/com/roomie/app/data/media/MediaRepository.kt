@@ -20,14 +20,20 @@ class MediaRepository(private val context: Context) {
 
     private val resolver get() = context.contentResolver
 
-    suspend fun getFolders(): List<GalleryFolder> = withContext(Dispatchers.IO) {
+    /** [trashedStableIds] excludes soft-trashed items (still physically on disk, still in
+     *  MediaStore — see [com.roomie.app.data.trash.TrashRepository]'s class doc) from both the
+     *  per-folder count and cover selection here, at the source, rather than leaving folder tiles
+     *  to show MediaStore's raw count while the grid inside each folder already filters the same
+     *  way — that mismatch is exactly what made a tile read "200" right after a session that left
+     *  the grid at "12". */
+    suspend fun getFolders(trashedStableIds: Set<String> = emptySet()): List<GalleryFolder> = withContext(Dispatchers.IO) {
         val counts = LinkedHashMap<Long, MutableList<MediaItem>>()
-        queryImages(bucketId = null, period = PeriodFilter.ALL).forEach {
-            counts.getOrPut(it.bucketId) { mutableListOf() }.add(it)
-        }
-        queryVideos(bucketId = null, period = PeriodFilter.ALL).forEach {
-            counts.getOrPut(it.bucketId) { mutableListOf() }.add(it)
-        }
+        queryImages(bucketId = null, period = PeriodFilter.ALL)
+            .filterNot { it.stableId in trashedStableIds }
+            .forEach { counts.getOrPut(it.bucketId) { mutableListOf() }.add(it) }
+        queryVideos(bucketId = null, period = PeriodFilter.ALL)
+            .filterNot { it.stableId in trashedStableIds }
+            .forEach { counts.getOrPut(it.bucketId) { mutableListOf() }.add(it) }
         counts.map { (bucketId, items) ->
             val newestFirst = items.maxByOrNull { it.dateTakenMillis }
             GalleryFolder(
