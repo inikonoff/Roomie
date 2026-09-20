@@ -1,6 +1,10 @@
 package com.roomie.app.ui.strings
 
 import androidx.compose.runtime.staticCompositionLocalOf
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /**
  * All user-facing text in the app. Kept as a plain interface + two hand-written implementations
@@ -38,6 +42,9 @@ interface AppStrings {
 
     // Swipe screen: position counter, e.g. "12 of 345"
     fun counterOfTotal(current: Int, total: Int): String
+
+    // Swipe screen: current photo/video's own capture date+time, e.g. "Sep 12, 2026, 15:47"
+    fun dateTaken(millis: Long): String
 
     // Trash folder: permanent delete
     val deleteForever: String
@@ -154,6 +161,9 @@ object EnglishStrings : AppStrings {
 
     override fun counterOfTotal(current: Int, total: Int) = "$current of $total"
 
+    override fun dateTaken(millis: Long): String =
+        DATE_TAKEN_FORMATTER_EN.format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))
+
     override val deleteForever = "Delete forever"
     override val emptyTrash = "Empty trash"
     override val emptyTrashConfirmTitle = "Empty trash?"
@@ -263,6 +273,9 @@ object RussianStrings : AppStrings {
 
     override fun counterOfTotal(current: Int, total: Int) = "$current из $total"
 
+    override fun dateTaken(millis: Long): String =
+        DATE_TAKEN_FORMATTER_RU.format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))
+
     override val deleteForever = "Удалить навсегда"
     override val emptyTrash = "Очистить корзину"
     override val emptyTrashConfirmTitle = "Очистить корзину?"
@@ -348,5 +361,10 @@ object RussianStrings : AppStrings {
     override val purchasesNotSetUp = "Покупки пока не настроены."
     override val backToFolders = "К папкам"
 }
+
+private val DATE_TAKEN_FORMATTER_EN: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("MMM d, yyyy, HH:mm", Locale.ENGLISH)
+private val DATE_TAKEN_FORMATTER_RU: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale("ru"))
 
 val LocalAppStrings = staticCompositionLocalOf<AppStrings> { EnglishStrings }

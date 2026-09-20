@@ -161,6 +161,19 @@ fun SwipeScreen(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
                     textAlign = TextAlign.Center,
                 )
+                // Only the field already loaded onto MediaItem when the folder's groups were
+                // queried (see MediaRepository) — never a fresh MediaStore lookup from composition.
+                // Absent entirely (not "no date") when the source has no DATE_TAKEN/DATE_ADDED at
+                // all, which dateTakenMillis == 0 signals.
+                uiState.currentGroup?.cover?.dateTakenMillis?.takeIf { it > 0 }?.let { millis ->
+                    Text(
+                        strings.dateTaken(millis),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
 
             if (uiState.monetizationEnabled) {
