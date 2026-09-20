@@ -32,6 +32,15 @@ class FolderListViewModel(
     private val _uiState = MutableStateFlow(FolderListUiState())
     val uiState: StateFlow<FolderListUiState> = _uiState.asStateFlow()
 
+    /** Reentrancy guard for [refresh], kept separate from [FolderListUiState.isLoading]/
+     *  [FolderListUiState.isRefreshing] — those two exist to tell the UI what to render, not to
+     *  answer "is a fetch already in flight". Reusing isLoading for that doubled its meaning into
+     *  both "no data yet" and "currently fetching", and since [FolderListUiState] defaults to
+     *  isLoading = true (nothing has loaded at app start), the very first [refresh] call always
+     *  saw isLoading already true and bailed out immediately — the spinner never went away because
+     *  the fetch that was supposed to end it never started. */
+    private var isFetching = false
+
     val trashCount: StateFlow<Int> = trashRepository.observeTrash().map { it.size }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -53,13 +62,15 @@ class FolderListViewModel(
      *  scroll position untouched, via [FolderListUiState.isRefreshing] instead. */
     fun refresh() {
         val state = _uiState.value
-        if (!state.hasMediaPermission || state.isLoading || state.isRefreshing) return
+        if (!state.hasMediaPermission || isFetching) return
+        isFetching = true
         val firstLoad = state.folders.isEmpty()
         viewModelScope.launch {
             _uiState.update { if (firstLoad) it.copy(isLoading = true) else it.copy(isRefreshing = true) }
             val trashedIds = trashRepository.getTrashedStableIds()
             val folders = mediaRepository.getFolders(trashedIds)
             _uiState.update { it.copy(folders = folders, isLoading = false, isRefreshing = false) }
+            isFetching = false
         }
     }
 }
