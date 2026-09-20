@@ -124,27 +124,28 @@ fun TrashFolderScreen(
 
     // The cleanup worker can't get consent for a real delete from the background (see
     // TrashRepository.permanentlyDeleteExpired), so anything already past its retention window
-    // just sits here until this screen is opened — pick it up automatically, right away, instead
-    // of making the user notice and tap "empty trash" themselves.
-    //
-    // Tracked separately from the guards above: this effect re-runs on every `entries` emission,
-    // including the one caused by its own request being confirmed, so without remembering which
-    // stableIds were already sent it would keep re-requesting the same (still-pending) entries.
-    var requestedForDeletion by remember { mutableStateOf<Set<String>>(emptySet()) }
-    LaunchedEffect(entries) {
-        val now = System.currentTimeMillis()
-        val expired = entries.filter { it.permanentDeleteAtMillis <= now && it.stableId !in requestedForDeletion }
-        if (expired.isNotEmpty()) {
-            requestedForDeletion = requestedForDeletion + expired.map { it.stableId }
-            viewModel.requestDeleteForever(expired)
-        }
-    }
+    // just sits here until this screen is opened. Previously that meant firing the system delete
+    // confirmation the instant the screen composed, with no action from the user at all — jarring,
+    // and easy to mistake for a bug the first time it happens. Now it's just a count, and the same
+    // "empty trash" button (which already covers every entry, expired or not) is what asks.
+    val expiredCount = entries.count { it.permanentDeleteAtMillis <= System.currentTimeMillis() }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(strings.trashTitle(entries.size)) },
+                title = {
+                    Column {
+                        Text(strings.trashTitle(entries.size))
+                        if (expiredCount > 0) {
+                            Text(
+                                strings.expiredTrashCount(expiredCount),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = {
                     IconButton(onClick = onBack, enabled = deleteProgress == null) {

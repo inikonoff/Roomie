@@ -101,6 +101,7 @@ interface AppStrings {
     val noFoldersFoundYet: String
     val cancel: String
     val autoDeleteEmptyFolders: String
+    val autoDeleteEmptyFoldersUnavailable: String
     val clearThumbnailCache: String
     val enableSwipeLimit: String
     val unlockedLimitDisabled: String
@@ -117,6 +118,7 @@ interface AppStrings {
 
     // Trash folder
     fun trashTitle(count: Int): String
+    fun expiredTrashCount(count: Int): String
     val trashIsEmpty: String
     val restore: String
 
@@ -219,6 +221,7 @@ object EnglishStrings : AppStrings {
     override val noFoldersFoundYet = "No folders found yet."
     override val cancel = "Cancel"
     override val autoDeleteEmptyFolders = "Delete empty folders automatically"
+    override val autoDeleteEmptyFoldersUnavailable = "Needs \"All files access\" on Android 11+ — currently has no effect"
     override val clearThumbnailCache = "Clear thumbnail cache"
     override val enableSwipeLimit = "Enable swipe limit & monetization"
     override val unlockedLimitDisabled = "Unlocked — limit disabled"
@@ -233,6 +236,7 @@ object EnglishStrings : AppStrings {
     override val selectMoveFolderPrompt = "Choose a destination folder in Settings first"
 
     override fun trashTitle(count: Int) = "Trash ($count)"
+    override fun expiredTrashCount(count: Int) = "$count expired — tap Empty trash to free up space"
     override val trashIsEmpty = "Trash is empty."
     override val restore = "Restore"
 
@@ -335,6 +339,7 @@ object RussianStrings : AppStrings {
     override val noFoldersFoundYet = "Папки пока не найдены."
     override val cancel = "Отмена"
     override val autoDeleteEmptyFolders = "Удалять пустые папки автоматически"
+    override val autoDeleteEmptyFoldersUnavailable = "На Android 11+ нужен доступ «Все файлы» — сейчас ничего не делает"
     override val clearThumbnailCache = "Очистить кэш превью"
     override val enableSwipeLimit = "Включить лимит свайпов и монетизацию"
     override val unlockedLimitDisabled = "Разблокировано — лимит отключён"
@@ -349,6 +354,7 @@ object RussianStrings : AppStrings {
     override val selectMoveFolderPrompt = "Сначала выберите папку назначения в Настройках"
 
     override fun trashTitle(count: Int) = "Корзина ($count)"
+    override fun expiredTrashCount(count: Int) = "Просрочено: $count — нажмите «Очистить корзину», чтобы освободить место"
     override val trashIsEmpty = "Корзина пуста."
     override val restore = "Восстановить"
 

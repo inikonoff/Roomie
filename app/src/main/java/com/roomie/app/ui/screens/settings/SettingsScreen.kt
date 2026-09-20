@@ -1,5 +1,6 @@
 package com.roomie.app.ui.screens.settings
 
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -198,6 +199,15 @@ fun SettingsScreen(
 
                 SwitchRow(
                     title = strings.autoDeleteEmptyFolders,
+                    // Scoped storage on Android 11+ gives no way to remove a folder Roomie doesn't
+                    // own without the separate, dangerous "All files access" permission, which this
+                    // app doesn't request — the toggle silently does nothing there. Honest about it
+                    // instead of pretending it works everywhere; still fully functional on 8–10.
+                    subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        strings.autoDeleteEmptyFoldersUnavailable
+                    } else {
+                        null
+                    },
                     checked = settings.autoDeleteEmptyFolders,
                     onCheckedChange = viewModel::setAutoDeleteEmptyFolders,
                 )
