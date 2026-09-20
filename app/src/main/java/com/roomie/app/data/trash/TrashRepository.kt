@@ -15,6 +15,8 @@ import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.data.media.MediaItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
@@ -32,6 +34,15 @@ class TrashRepository(
     private val trashDao: TrashDao,
 ) {
     private val resolver get() = context.contentResolver
+
+    /** Emits whenever files are actually gone for good — a real permanent delete, a system delete
+     *  the app is just catching Room up with, or a stale trash row whose file already vanished
+     *  outside Roomie. Not emitted for [restoreFromTrash], which drops the Room row without
+     *  touching the file. A long-lived swipe session (its ViewModel lives in the NavHost, not this
+     *  screen) subscribes to purge any card still sitting in its stack for one of these ids —
+     *  otherwise it would keep showing a card for a file that's already gone. */
+    private val _permanentlyRemovedStableIds = MutableSharedFlow<Set<String>>(extraBufferCapacity = 1)
+    val permanentlyRemovedStableIds: SharedFlow<Set<String>> = _permanentlyRemovedStableIds
 
     /** Persistent view of everything currently trashed (survives app restarts) — backs the Trash
      *  folder on the main screen. */
@@ -156,6 +167,7 @@ class TrashRepository(
             CrashReporter.mark(context, "trash_delete:confirmed[$index/${entries.size}]:room_cleaned:${entry.stableId}")
             onProgress(index + 1, entries.size)
         }
+        if (entries.isNotEmpty()) _permanentlyRemovedStableIds.tryEmit(entries.map { it.stableId }.toSet())
         CleanupResult(freedBytes, affectedDirs)
     }
 
@@ -185,6 +197,7 @@ class TrashRepository(
             CrashReporter.mark(context, "trash_delete:filtered:valid=${valid.size}:stale=${stale.size}")
             if (stale.isNotEmpty()) {
                 trashDao.deleteByIds(stale.map { it.stableId })
+                _permanentlyRemovedStableIds.tryEmit(stale.map { it.stableId }.toSet())
             }
             if (valid.isEmpty()) return@withContext emptyList<TrashEntry>() to null
 
@@ -214,6 +227,7 @@ class TrashRepository(
     ): CleanupResult {
         var freedBytes = 0L
         val affectedDirs = mutableSetOf<File>()
+        val deletedIds = mutableSetOf<String>()
 
         for ((index, entry) in entries.withIndex()) {
             CrashReporter.mark(context, "trash_delete:entry[$index/${entries.size}]:start:${entry.stableId}")
@@ -228,6 +242,7 @@ class TrashRepository(
             CrashReporter.mark(context, "trash_delete:entry[$index/${entries.size}]:done:deleted=$deleted")
             if (deleted) {
                 freedBytes += entry.sizeBytes
+                deletedIds += entry.stableId
                 // Committed right away, one file at a time, instead of batched after the whole
                 // loop: observeTrash() emits immediately so the UI list shrinks live, and — just
                 // as importantly — anything already deleted here survives the ViewModel (and its
@@ -239,6 +254,7 @@ class TrashRepository(
             onProgress(index + 1, entries.size)
         }
 
+        if (deletedIds.isNotEmpty()) _permanentlyRemovedStableIds.tryEmit(deletedIds)
         return CleanupResult(freedBytes, affectedDirs)
     }
 }

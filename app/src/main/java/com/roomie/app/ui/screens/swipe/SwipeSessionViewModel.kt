@@ -161,6 +161,30 @@ class SwipeSessionViewModel(
                 _uiState.update { it.copy(trashedCount = count) }
             }
         }
+        // This ViewModel lives in the NavHost, not the swipe screen — a folder loaded once keeps
+        // its stack across trips to Settings/Trash and back. If the user empties the trash (or a
+        // stale row is discovered) while a card for one of those now-gone files is still sitting
+        // in the stack, drop it here instead of waiting for a reload that loadedSessionKey would
+        // refuse to do anyway. Purely a filter of the existing stack — totalCount and
+        // originalIndexByKey are untouched, so the position counter and progress bar don't jump.
+        viewModelScope.launch {
+            trashRepository.permanentlyRemovedStableIds.collectLatest { removedIds ->
+                purgeRemovedIds(removedIds)
+            }
+        }
+    }
+
+    private fun purgeRemovedIds(removedIds: Set<String>) {
+        undoHistory.removeAll { action -> action.group.items.any { it.stableId in removedIds } }
+        browseHistory.removeAll { group -> group.items.any { it.stableId in removedIds } }
+        _uiState.update { state ->
+            val filtered = state.stack.filter { group -> group.items.none { it.stableId in removedIds } }
+            if (filtered.size == state.stack.size) {
+                state
+            } else {
+                state.copy(stack = filtered, isStackExhausted = filtered.isEmpty(), canUndo = undoHistory.isNotEmpty())
+            }
+        }
     }
 
     /**
