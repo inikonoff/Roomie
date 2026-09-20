@@ -31,6 +31,13 @@ enum class SwipeDirection { LEFT, RIGHT, UP, DOWN }
 
 private const val MAX_UNDO_HISTORY = 10
 
+/** How far Browse-back (a "do nothing" left-swipe) can rewind, independent of [MAX_UNDO_HISTORY] —
+ *  undo/redo of an actual decision (delete/move) staying shallow is deliberate, but plain browsing
+ *  used to hit the same 10-deep wall and just vibrate "nowhere to go" well within a single normal
+ *  pass over a folder. High enough that a realistic browsing session won't hit it either, without
+ *  keeping an unbounded amount of history for the life of a session. */
+private const val MAX_BROWSE_HISTORY = 200
+
 /** How many swipes accumulate in memory before [SwipeSessionViewModel.flushSwipeCount] writes them
  *  to DataStore in one go, instead of a real disk write on every single swipe (the heaviest frame
  *  already, between the stack update and the exit-fling animation starting). */
@@ -119,7 +126,7 @@ class SwipeSessionViewModel(
     /** Cards passed with a "do nothing" (browsing) swipe, so a left-swipe-to-go-back has something
      *  to return to. Separate from [undoHistory] on purpose: a plain browse-back must never risk
      *  un-deleting or un-moving something a *different* direction actually acted on. */
-    private val browseHistory = ArrayDeque<MediaGroup>(MAX_UNDO_HISTORY)
+    private val browseHistory = ArrayDeque<MediaGroup>(MAX_BROWSE_HISTORY)
 
     /** Jobs performing an in-flight "move to folder", keyed by group, so undo can cancel one that
      *  hasn't applied yet. A move that already completed can't be reversed by undo (accepted MVP
@@ -293,7 +300,7 @@ class SwipeSessionViewModel(
             }
             SwipeCardAction.MOVE_TO_FOLDER -> requestMove(group)
             SwipeCardAction.NONE -> {
-                if (browseHistory.size >= MAX_UNDO_HISTORY) browseHistory.removeFirst()
+                if (browseHistory.size >= MAX_BROWSE_HISTORY) browseHistory.removeFirst()
                 browseHistory.addLast(group)
             }
             SwipeCardAction.KEEP, SwipeCardAction.POSTPONE -> Unit
