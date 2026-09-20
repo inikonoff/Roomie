@@ -126,6 +126,13 @@ class SwipeSessionViewModel(
      *  limitation — see requestMove). */
     private val pendingMoveJobs = mutableMapOf<String, Job>()
 
+    /** Group keys whose move has actually finished — i.e. [MediaRepository.applyMove] returned —
+     *  as opposed to merely having no job left in [pendingMoveJobs], which (on API 30+) also
+     *  becomes true the instant the confirmation dialog is *requested*, well before the user has
+     *  answered it. [undo] checks this, not [pendingMoveJobs], to tell "nothing to cancel because
+     *  it's done" apart from "nothing to cancel because it hasn't started confirming yet". */
+    private val completedMoveKeys = mutableSetOf<String>()
+
     private var currentSettings: RoomieSettings = RoomieSettings()
 
     /** Swipes counted locally since the last [flushSwipeCount], not yet written to DataStore. Only
@@ -206,6 +213,7 @@ class SwipeSessionViewModel(
             undoHistory.clear()
             browseHistory.clear()
             pendingMoveJobs.clear()
+            completedMoveKeys.clear()
             val sortOrder = settingsRepository.settings.first().sortOrder
             // A swipe-deleted photo is still physically on disk (see TrashRepository) until the
             // user empties the trash, so it must be filtered out here or it would just show back
@@ -338,10 +346,21 @@ class SwipeSessionViewModel(
 
     fun undo() {
         val action = undoHistory.removeLastOrNull() ?: return
+        // A move that already landed (file physically in another folder) can't be reversed by
+        // this pass — putting the card back would show it as still in this folder when it isn't.
+        // pendingMoveJobs alone can't tell "already done" apart from "not even confirmed yet": on
+        // API 30+ that job completes the instant the confirmation dialog is requested, well before
+        // the user has answered it, so completedMoveKeys (set only once applyMove actually ran) is
+        // checked instead.
+        val alreadyMoved = action.action == SwipeCardAction.MOVE_TO_FOLDER && action.group.key in completedMoveKeys
         when (action.action) {
             SwipeCardAction.DELETE -> viewModelScope.launch { trashRepository.cancelPendingTrash(action.group.items) }
-            SwipeCardAction.MOVE_TO_FOLDER -> pendingMoveJobs.remove(action.group.key)?.cancel()
+            SwipeCardAction.MOVE_TO_FOLDER -> if (!alreadyMoved) pendingMoveJobs.remove(action.group.key)?.cancel()
             SwipeCardAction.KEEP, SwipeCardAction.NONE, SwipeCardAction.POSTPONE -> Unit
+        }
+        if (alreadyMoved) {
+            _uiState.update { it.copy(canUndo = undoHistory.isNotEmpty()) }
+            return
         }
         _uiState.update {
             // A postponed card is already somewhere in the stack (at the back); drop that copy
@@ -384,6 +403,7 @@ class SwipeSessionViewModel(
                 _moveConfirmationEvents.emit(MoveConfirmationRequest(intentSender, group, targetPath))
             } else {
                 mediaRepository.applyMove(group.allUris, targetPath)
+                completedMoveKeys += group.key
             }
         }
         pendingMoveJobs[group.key] = job
@@ -392,7 +412,10 @@ class SwipeSessionViewModel(
 
     /** Called once the system write-access dialog (if any) has been confirmed. */
     fun onMoveConfirmed(request: MoveConfirmationRequest) {
-        viewModelScope.launch { mediaRepository.applyMove(request.group.allUris, request.targetRelativePath) }
+        viewModelScope.launch {
+            mediaRepository.applyMove(request.group.allUris, request.targetRelativePath)
+            completedMoveKeys += request.group.key
+        }
     }
 
     /** Builds the end-of-session summary from what actually happened this pass over the folder —
