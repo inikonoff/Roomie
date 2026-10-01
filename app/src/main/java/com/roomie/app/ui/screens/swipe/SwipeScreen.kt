@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -48,6 +49,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,6 +62,7 @@ import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -77,13 +80,25 @@ import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.SwipeLeftDelete
 import com.roomie.app.ui.theme.SwipePostpone
 import com.roomie.app.ui.theme.SwipeRightKeep
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.hypot
+import kotlin.math.max
 
 private const val SWIPE_THRESHOLD_DP = 120f
 private const val MAX_PEEK_ZOOM = 2.5f
+
+/** A fast flick can commit a swipe even when released well short of [SWIPE_THRESHOLD_DP] — see
+ *  [dominantSign] and its call site in [SwipeCardSlot]'s `onDragEnd`. */
+private const val FLING_VELOCITY_THRESHOLD_DP = 1000f
+
+/** Floor applied to the exit decay's initial velocity so a slow drag that crossed the threshold by
+ *  offset alone (near-zero release velocity) still visibly flies off instead of drifting to a stop
+ *  mid-stack. */
+private const val MIN_DECAY_VELOCITY_DP = 400f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -321,8 +336,11 @@ private fun BottomActionBar(strings: AppStrings, canUndo: Boolean, onUndo: () ->
 /** A card exiting the stack after a committed swipe. [offset] is a snapshot taken by
  *  `SwipeCardSlot`'s `onDragEnd` at the exact instant it decided to commit — passed through rather
  *  than re-read later from the (still-mutable) drag/fling state, so a stray leftover spring-back
- *  coroutine from a very quick re-grab can't race with it (see [SwipeCardSlot]'s `LaunchedEffect`). */
-private data class ExitingCardState(val group: MediaGroup, val direction: SwipeDirection, val offset: Offset)
+ *  coroutine from a very quick re-grab can't race with it (see [SwipeCardSlot]'s `LaunchedEffect`).
+ *  [velocity] is the release velocity along the exit axis only (px/s, already signed to match
+ *  [direction] and floored to [MIN_DECAY_VELOCITY_DP]) — the perpendicular component is dropped so
+ *  the card never drifts off on a diagonal. */
+private data class ExitingCardState(val group: MediaGroup, val direction: SwipeDirection, val offset: Offset, val velocity: Float)
 
 private enum class CardRole { Behind, Top, Exiting }
 
@@ -412,7 +430,8 @@ private fun CardStack(
                     cardBorderWidthDp = cardBorderWidthDp,
                     exitDirection = if (role == CardRole.Exiting) exiting?.direction else null,
                     exitOffset = if (role == CardRole.Exiting) exiting?.offset else null,
-                    onCommitted = { direction, releaseOffset ->
+                    exitVelocity = if (role == CardRole.Exiting) exiting?.velocity else null,
+                    onCommitted = { direction, releaseOffset, axisVelocity ->
                         // Ask the ViewModel first: a rejected swipe (e.g. Move-to-folder with no
                         // target configured — see SwipeSessionViewModel.swipe) must never touch
                         // `exiting` at all, so the card can spring back to center exactly as if
@@ -423,7 +442,7 @@ private fun CardStack(
                             // exiting state (and the offset it needs) is already set before
                             // anything downstream could observe the stack without it, which is
                             // what a successful-swipe skip/pop would look like.
-                            exiting = ExitingCardState(group, direction, releaseOffset)
+                            exiting = ExitingCardState(group, direction, releaseOffset, axisVelocity)
                         }
                         accepted
                     },
@@ -447,15 +466,20 @@ private fun CardStack(
 /**
  * Applies the user's chosen swipe-card look for the current drag/fling [offset]: Classic rotates
  * like a card pivoting on a table, Fade and Shrink both drop the rotation and instead ease out via
- * opacity or size as the card travels toward (and past) the fling distance.
+ * opacity or size as the card travels toward (and past) the edge of its own footprint — [cardWidthPx]/
+ * [cardHeightPx], not a fixed fling distance, so "travelled" means the same thing during a live drag
+ * and during the exit decay alike, and Fade/Shrink never finish easing out before the card is
+ * actually off-screen.
  */
 private fun GraphicsLayerScope.applySwipeStyle(
     style: CardAnimationStyle,
     offset: Offset,
     thresholdPx: Float,
+    cardWidthPx: Float,
+    cardHeightPx: Float,
     baseScale: Float,
 ) {
-    val travelled = (hypot(offset.x, offset.y) / FLING_DISTANCE).coerceIn(0f, 1f)
+    val travelled = max(abs(offset.x) / cardWidthPx, abs(offset.y) / cardHeightPx).coerceIn(0f, 1f)
     when (style) {
         CardAnimationStyle.CLASSIC -> {
             rotationZ = (offset.x / thresholdPx) * 12f
@@ -494,14 +518,11 @@ private val ZOOM_PAN_SPRING = spring<Offset>(
     stiffness = Spring.StiffnessMedium,
 )
 
-private const val FLING_DISTANCE = 1600f
-
-private fun flingTarget(direction: SwipeDirection, current: Offset): Offset = when (direction) {
-    SwipeDirection.RIGHT -> Offset(FLING_DISTANCE, current.y)
-    SwipeDirection.LEFT -> Offset(-FLING_DISTANCE, current.y)
-    SwipeDirection.DOWN -> Offset(current.x, FLING_DISTANCE)
-    SwipeDirection.UP -> Offset(current.x, -FLING_DISTANCE)
-}
+/** Picks which of an offset/velocity pair's signs decides a commit's direction, for the (rare) case
+ *  the offset component is exactly zero — a pure-velocity commit on an axis the finger never
+ *  actually displaced along. Real gestures almost always agree on sign between the two already. */
+private fun dominantSign(offsetComponent: Float, velocityComponent: Float): Float =
+    if (offsetComponent != 0f) offsetComponent else velocityComponent
 
 /**
  * One instance per photo for its whole life in the stack (see the [CardStack] doc for why that
@@ -522,7 +543,8 @@ private fun SwipeCardSlot(
     cardBorderWidthDp: Float,
     exitDirection: SwipeDirection?,
     exitOffset: Offset?,
-    onCommitted: (SwipeDirection, Offset) -> Boolean,
+    exitVelocity: Float?,
+    onCommitted: (SwipeDirection, Offset, Float) -> Boolean,
     onExitFinished: () -> Unit,
 ) {
     // Written to directly on every pointer-move event instead of through a suspend Animatable —
@@ -546,8 +568,14 @@ private fun SwipeCardSlot(
     var isZoomed by remember(group.key) { mutableStateOf(false) }
     val density = LocalDensity.current
     val thresholdPx = with(density) { SWIPE_THRESHOLD_DP.dp.toPx() }
+    val flingVelocityThresholdPx = with(density) { FLING_VELOCITY_THRESHOLD_DP.dp.toPx() }
+    val minDecayVelocityPx = with(density) { MIN_DECAY_VELOCITY_DP.dp.toPx() }
     val cardWidthPx = with(density) { cardWidth.toPx() }
     val cardHeightPx = with(density) { cardHeight.toPx() }
+    // Native-feeling fling physics (the same curve Android's own scroll/fling uses) for the exit
+    // decay — not keyed on group.key: it only depends on density, so one instance serves every
+    // card this slot ever plays host to.
+    val decayAnimationSpec = rememberSplineBasedDecay<Offset>()
 
     // Fires once per commit — role has already become Exiting with a non-null exitDirection/
     // exitOffset by the time this runs (CardStack sets all three together). Uses exitOffset — the
@@ -573,12 +601,40 @@ private fun SwipeCardSlot(
     // whatever *should* have been top from `slots` too, since its key matched the orphaned
     // exitingKey — the frozen-card symptom. onExitFinished's own group.key check (see CardStack)
     // keeps this cancellation path from clobbering a legitimately newer exiting card instead.
-    LaunchedEffect(group.key, exitDirection, exitOffset) {
-        if (exitDirection == null || exitOffset == null) return@LaunchedEffect
+    LaunchedEffect(group.key, exitDirection, exitOffset, exitVelocity) {
+        if (exitDirection == null || exitOffset == null || exitVelocity == null) return@LaunchedEffect
         try {
             flingOffset.snapTo(exitOffset)
             dragOffset = Offset.Zero
-            flingOffset.animateTo(flingTarget(exitDirection, exitOffset), SWIPE_SPRING)
+            // Perpendicular component dropped entirely (not just left at its release value) so the
+            // decay travels straight along the swiped axis instead of drifting diagonally.
+            val initialVelocity = when (exitDirection) {
+                SwipeDirection.LEFT, SwipeDirection.RIGHT -> Offset(exitVelocity, 0f)
+                SwipeDirection.UP, SwipeDirection.DOWN -> Offset(0f, exitVelocity)
+            }
+            // animateDecay's own natural end (velocity decayed to ~0) is not a reliable finish
+            // line here — exitVelocity is floored (see MIN_DECAY_VELOCITY_DP) so this almost always
+            // reaches the edge well before that, but nothing guarantees it, and waiting for it
+            // anyway would leave Exiting sitting in the stack, still eating touches, long after the
+            // card has visually left. Race a watcher against the decay instead: whichever notices
+            // the card is now fully past its own width/height along the exit axis stops the other.
+            // watcher.cancel() after animateDecay returns is what prevents the opposite case (decay
+            // finishing or getting stopped) from leaving an orphaned watcher awaiting a condition
+            // that will now never arrive, since flingOffset.value stops changing once decay ends.
+            coroutineScope {
+                val watcher = launch {
+                    snapshotFlow { flingOffset.value }
+                        .first { value ->
+                            when (exitDirection) {
+                                SwipeDirection.LEFT, SwipeDirection.RIGHT -> abs(value.x) > cardWidthPx
+                                SwipeDirection.UP, SwipeDirection.DOWN -> abs(value.y) > cardHeightPx
+                            }
+                        }
+                    flingOffset.stop()
+                }
+                flingOffset.animateDecay(initialVelocity, decayAnimationSpec)
+                watcher.cancel()
+            }
         } finally {
             onExitFinished()
         }
@@ -597,7 +653,7 @@ private fun SwipeCardSlot(
                 val renderOffset = dragOffset + flingOffset.value
                 translationX = renderOffset.x + zoomPan.value.x
                 translationY = renderOffset.y + zoomPan.value.y
-                applySwipeStyle(animationStyle, renderOffset, thresholdPx, baseScale = scale.value)
+                applySwipeStyle(animationStyle, renderOffset, thresholdPx, cardWidthPx, cardHeightPx, baseScale = scale.value)
             }
             .then(
                 if (role != CardRole.Top) {
@@ -613,50 +669,70 @@ private fun SwipeCardSlot(
                                     if (crossed) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 }
                             },
-                            onDragEnd = {
+                            onDragEnd = { velocityPxPerSec ->
                                 // Includes any not-yet-settled flingOffset from a quick re-grab
-                                // right after a previous non-swipe release, so the spring-back
+                                // right after a previous non-swipe release, so the commit decision
                                 // below picks up exactly where the card visually was instead of
-                                // snapping to dragOffset alone.
+                                // reading dragOffset alone.
                                 val current = dragOffset + flingOffset.value
-                                val horizontalCrossed = abs(current.x) > thresholdPx
-                                val verticalCrossed = abs(current.y) > thresholdPx
+                                // Two independent routes to a commit on each axis — crossing the
+                                // offset threshold (as before) or a fast-enough release velocity
+                                // even short of it — and the axis that wins is whichever scores
+                                // higher on *either* measure, so the action stays tied to one side
+                                // instead of a free diagonal throw.
+                                val xScore = max(abs(current.x) / thresholdPx, abs(velocityPxPerSec.x) / flingVelocityThresholdPx)
+                                val yScore = max(abs(current.y) / thresholdPx, abs(velocityPxPerSec.y) / flingVelocityThresholdPx)
                                 val direction = when {
-                                    horizontalCrossed && abs(current.x) >= abs(current.y) ->
-                                        if (current.x > 0) SwipeDirection.RIGHT else SwipeDirection.LEFT
-                                    verticalCrossed -> if (current.y > 0) SwipeDirection.DOWN else SwipeDirection.UP
-                                    else -> null
+                                    xScore < 1f && yScore < 1f -> null
+                                    xScore >= yScore ->
+                                        if (dominantSign(current.x, velocityPxPerSec.x) >= 0f) SwipeDirection.RIGHT else SwipeDirection.LEFT
+                                    else ->
+                                        if (dominantSign(current.y, velocityPxPerSec.y) >= 0f) SwipeDirection.DOWN else SwipeDirection.UP
                                 }
-                                if (direction != null) {
-                                    // Pass the snapshot taken right above (current) through
-                                    // explicitly instead of letting the exit animation re-read
-                                    // dragOffset/flingOffset later — see the LaunchedEffect above
-                                    // for why a live re-read at that later point can race with a
-                                    // stray leftover spring-back coroutine. The actual fly-out
-                                    // animation is driven by this same instance's own
-                                    // LaunchedEffect, once CardStack's next recomposition flips
-                                    // this slot's role to Exiting with this direction/offset —
-                                    // but only if the ViewModel actually accepted the swipe; a
-                                    // rejected one (e.g. no Move-to-folder target configured)
-                                    // springs back to center exactly like a below-threshold
-                                    // release below, as if the gesture had not happened.
-                                    if (!onCommitted(direction, current)) {
-                                        scope.launch {
-                                            flingOffset.snapTo(current)
-                                            dragOffset = Offset.Zero
-                                            flingOffset.animateTo(Offset.Zero, SWIPE_SPRING)
-                                        }
-                                    }
+                                // dragOffset must not reset to zero until flingOffset has actually
+                                // taken over the same value — doing it in the other order rendered
+                                // one frame at the visual center, then jumped back out to the
+                                // release point once the launched snapTo caught up, a visible pop.
+                                suspend fun springBackToCenter() {
+                                    flingOffset.snapTo(current)
+                                    dragOffset = Offset.Zero
+                                    flingOffset.animateTo(Offset.Zero, SWIPE_SPRING)
+                                }
+                                if (direction == null) {
+                                    scope.launch { springBackToCenter() }
                                 } else {
-                                    // dragOffset must not reset to zero until flingOffset has
-                                    // actually taken over the same value — doing it in the other
-                                    // order rendered one frame at the visual center, then jumped
-                                    // back out to the release point once the launched snapTo
-                                    // caught up, a visible pop on every cancelled swipe.
-                                    scope.launch {
-                                        flingOffset.snapTo(current)
-                                        dragOffset = Offset.Zero
-                                        flingOffset.animateTo(Offset.Zero, SWIPE_SPRING)
+                                    // A velocity-only commit (never crossed the offset threshold,
+                                    // so the drag haptic in onDrag above never fired) still gets
+                                    // one click, same feedback as crossing the threshold would have.
+                                    if (!pastThreshold) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    val axisVelocity = if (direction == SwipeDirection.LEFT || direction == SwipeDirection.RIGHT) {
+                                        velocityPxPerSec.x
+                                    } else {
+                                        velocityPxPerSec.y
+                                    }
+                                    val directionSign = if (direction == SwipeDirection.RIGHT || direction == SwipeDirection.DOWN) 1f else -1f
+                                    // Floored so a slow drag that only barely crossed the offset
+                                    // threshold (near-zero release velocity) still visibly flies off
+                                    // during the exit decay instead of drifting to a stop mid-stack.
+                                    // Named distinctly from this composable's own exitVelocity
+                                    // parameter (used by the LaunchedEffect above) purely to avoid
+                                    // shadowing it — this is the value a future exit, if accepted,
+                                    // will eventually be handed back as that very parameter.
+                                    val axisExitVelocity = directionSign * max(abs(axisVelocity), minDecayVelocityPx)
+                                    // Pass the snapshot taken above (current) through explicitly
+                                    // instead of letting the exit animation re-read dragOffset/
+                                    // flingOffset later — see the LaunchedEffect above for why a
+                                    // live re-read at that later point can race with a stray
+                                    // leftover spring-back coroutine. The actual fly-out animation
+                                    // is driven by this same instance's own LaunchedEffect, once
+                                    // CardStack's next recomposition flips this slot's role to
+                                    // Exiting with this direction/offset/velocity — but only if the
+                                    // ViewModel actually accepted the swipe; a rejected one (e.g. no
+                                    // Move-to-folder target configured) springs back to center
+                                    // exactly like a below-threshold release, as if the gesture had
+                                    // not happened.
+                                    if (!onCommitted(direction, current, axisExitVelocity)) {
+                                        scope.launch { springBackToCenter() }
                                     }
                                 }
                             },
@@ -713,16 +789,23 @@ private fun SwipeCardSlot(
  * past touch slop (swipe) or holding still past the long-press timeout (zoom) — wins, and the
  * gesture stays in that mode until the finger lifts. This is why a deliberate hold-and-drag to
  * look around a zoomed photo can never suddenly turn into a swipe.
+ *
+ * [onDragEnd] receives the release velocity in px/s, measured only across this gesture's swipe
+ * portion (the pre-resolution exploring phase counts, a resolved zoom never does — nothing reads
+ * the tracker in that branch) — so a long-press-to-zoom gesture never feeds its own, unrelated
+ * motion into a swipe decision.
  */
 private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
     onDrag: (Offset) -> Unit,
-    onDragEnd: () -> Unit,
+    onDragEnd: (velocity: Offset) -> Unit,
     onZoomStart: (TransformOrigin) -> Unit,
     onZoomPan: (Offset) -> Unit,
     onZoomEnd: () -> Unit,
 ) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
+        val velocityTracker = VelocityTracker()
+        velocityTracker.addPosition(down.uptimeMillis, down.position)
         var totalDrag = Offset.Zero
         var isZoom = false
         var isSwipe = false
@@ -736,6 +819,7 @@ private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
             val change = event.changes.firstOrNull { it.positionChanged() }
             if (change != null) {
                 totalDrag += change.positionChange()
+                velocityTracker.addPosition(change.uptimeMillis, change.position)
                 change.consume()
                 if (hypot(totalDrag.x, totalDrag.y) > viewConfiguration.touchSlop) {
                     isSwipe = true
@@ -772,11 +856,13 @@ private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
                 val change = event.changes.firstOrNull { it.positionChanged() }
                 if (change != null) {
                     onDrag(change.positionChange())
+                    velocityTracker.addPosition(change.uptimeMillis, change.position)
                     change.consume()
                 }
                 if (event.changes.none { it.pressed }) break
             }
-            onDragEnd()
+            val velocity = velocityTracker.calculateVelocity()
+            onDragEnd(Offset(velocity.x, velocity.y))
         }
     }
 }
