@@ -34,6 +34,10 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Debug-signed on purpose — this release build type exists only so framestats
+            // measurements run on a release-optimized binary (no debuggable overhead), not to
+            // produce a Play Store artifact. See the debug signingConfig's own comment above.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

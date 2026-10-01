@@ -35,6 +35,11 @@ jobs:
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --no-daemon
 
+      - name: Build release APK
+        # Debug-signed (see app/build.gradle.kts) — for on-device framestats measurement on a
+        # release-optimized binary, not a store release.
+        run: ./gradlew :app:assembleRelease --no-daemon
+
       - name: Print resolved versions of the suspect native-lib dependencies
         run: |
           ./gradlew -q :app:dependencies --configuration debugRuntimeClasspath 2>/dev/null \
@@ -55,9 +60,16 @@ jobs:
             readelf -lW "$so" | grep LOAD
           done
 
-      - name: Upload APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: roomie-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: roomie-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
