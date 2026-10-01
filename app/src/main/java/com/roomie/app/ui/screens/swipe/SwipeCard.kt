@@ -6,7 +6,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,7 +28,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
@@ -47,7 +45,9 @@ import java.util.concurrent.TimeUnit
  *  ~200 MB of decoded heap and nothing on screen can show it. */
 internal const val MAX_PEEK_ZOOM = 2.5f
 
-/** Screen-sized decode key. CardStack's prefetch of stack[2] must write this same string. */
+/** Screen-sized decode key. Every role (Warm/Behind/Top) requests the same uri at the same
+ *  widthPx/heightPx, so stack[2]'s own decode (as a Warm slot) already sits under the key
+ *  Behind/Top will look up later — no separate prefetch needs to agree with this. */
 internal fun screenCacheKey(uri: Uri, widthPx: Int, heightPx: Int): String =
     "$uri|screen|${widthPx}x$heightPx"
 
@@ -57,6 +57,8 @@ internal fun zoomCacheKey(uri: Uri, widthPx: Int, heightPx: Int): String =
 @Composable
 fun SwipeCard(
     group: MediaGroup,
+    widthPx: Int,
+    heightPx: Int,
     modifier: Modifier = Modifier,
     isZoomed: Boolean = false,
     showBorder: Boolean = false,
@@ -67,7 +69,7 @@ fun SwipeCard(
     var isPlayingVideo by remember(group.key) { mutableStateOf(false) }
     val shape = RoundedCornerShape(cornerRadiusDp.dp)
 
-    BoxWithConstraints(
+    Box(
         modifier = modifier
             .clip(shape)
             .background(MaterialTheme.colorScheme.surface, shape)
@@ -83,9 +85,6 @@ fun SwipeCard(
             ),
     ) {
         val context = LocalContext.current
-        val density = LocalDensity.current
-        val widthPx = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
-        val heightPx = with(density) { maxHeight.roundToPx() }.coerceAtLeast(1)
         val screenKey = screenCacheKey(group.cover.uri, widthPx, heightPx)
         val zoomWidthPx = (widthPx * MAX_PEEK_ZOOM).toInt().coerceAtLeast(1)
         val zoomHeightPx = (heightPx * MAX_PEEK_ZOOM).toInt().coerceAtLeast(1)
