@@ -18,7 +18,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,23 +35,17 @@ import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.compose.SubcomposeAsyncImage
 import coil3.compose.SubcomposeAsyncImageContent
-import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.request.crossfade
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.ui.components.InlineVideoPlayer
 import com.roomie.app.ui.strings.LocalAppStrings
-import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
 
 /** Long-press zoom never asks for more than this times the on-screen card. A 50 MP original is
  *  ~200 MB of decoded heap and nothing on screen can show it. */
 internal const val MAX_PEEK_ZOOM = 2.5f
-
-/** Only warm the zoom decode after the card has actually been looked at. A fast flip cancels this
- *  with the composition, so browsing does not pay for a decode it will not use. */
-private const val ZOOM_WARM_LINGER_MS = 450L
 
 /** Screen-sized decode key. CardStack's prefetch of stack[2] must write this same string. */
 internal fun screenCacheKey(uri: Uri, widthPx: Int, heightPx: Int): String =
@@ -97,23 +90,6 @@ fun SwipeCard(
         val zoomWidthPx = (widthPx * MAX_PEEK_ZOOM).toInt().coerceAtLeast(1)
         val zoomHeightPx = (heightPx * MAX_PEEK_ZOOM).toInt().coerceAtLeast(1)
         val zoomKey = zoomCacheKey(group.cover.uri, zoomWidthPx, zoomHeightPx)
-
-        // Same key the zoom layer reads. The old warm-up wrote `zoomwarm|1600`, which nothing
-        // looked up, so every long-press decoded from scratch and AsyncImage fell through to the
-        // card background.
-        LaunchedEffect(group.cover.uri, zoomKey) {
-            if (group.cover.isVideo) return@LaunchedEffect
-            delay(ZOOM_WARM_LINGER_MS)
-            context.imageLoader.enqueue(
-                ImageRequest.Builder(context)
-                    .data(group.cover.uri)
-                    .size(zoomWidthPx, zoomHeightPx)
-                    .allowHardware(false)
-                    .memoryCacheKey(zoomKey)
-                    .crossfade(false)
-                    .build(),
-            )
-        }
 
         if (group.cover.isVideo && isPlayingVideo) {
             InlineVideoPlayer(
