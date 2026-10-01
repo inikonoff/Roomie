@@ -83,7 +83,6 @@ import kotlin.math.abs
 import kotlin.math.hypot
 
 private const val SWIPE_THRESHOLD_DP = 120f
-internal const val MAX_PEEK_ZOOM = 2.5f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -324,7 +323,7 @@ private fun BottomActionBar(strings: AppStrings, canUndo: Boolean, onUndo: () ->
  *  coroutine from a very quick re-grab can't race with it (see [SwipeCardSlot]'s `LaunchedEffect`). */
 private data class ExitingCardState(val group: MediaGroup, val direction: SwipeDirection, val offset: Offset)
 
-private enum class CardRole { Behind, Top, Exiting }
+private enum class CardRole { Warm, Behind, Top, Exiting }
 
 /** Fits a card of [ratio] (width/height) inside a [maxWidth] x [maxHeight] box, like
  *  [androidx.compose.ui.layout.ContentScale.Fit] but sizing the composable itself rather than
@@ -363,16 +362,17 @@ private fun CardStack(
 
     val top = stack.getOrNull(0)
     val behind = stack.getOrNull(1)
-    val prefetch = stack.getOrNull(2)
+    val warm = stack.getOrNull(2)
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        // Only stack[0] and stack[1] are actually composed (below) — by the time a fast swiper
-        // reaches stack[2] it would otherwise not have started decoding at all. Warming Coil's
-        // cache for it one card early removes that gap without paying for a third on-screen card.
+        // stack[2] is now also composed below (role Warm, invisible) so its border is already in
+        // the tree before it's ever promoted to Behind/Top — see the border-measure TZ. The decode
+        // warm-up stays regardless, since composing the slot doesn't by itself start a request;
+        // without this, a fast swiper would reach it before it ever started decoding.
         val context = LocalContext.current
         val density = LocalDensity.current
-        LaunchedEffect(prefetch?.key, maxWidth, maxHeight) {
-            val group = prefetch ?: return@LaunchedEffect
+        LaunchedEffect(warm?.key, maxWidth, maxHeight) {
+            val group = warm ?: return@LaunchedEffect
             val (w, h) = fitSize(group.cover.aspectRatio, maxWidth, maxHeight)
             val widthPx = with(density) { w.roundToPx() }.coerceAtLeast(1)
             val heightPx = with(density) { h.roundToPx() }.coerceAtLeast(1)
@@ -397,6 +397,12 @@ private fun CardStack(
         // once that finishes and `exiting` clears.
         val exitingKey = exiting?.group?.key
         val slots = buildList {
+            // Drawn first = underneath. Border is already on this node while the user is still
+            // looking at `top`, so promoting it later (Warm -> Behind -> Top) never inserts a
+            // Modifier.border into the chain on the release frame — see the border-measure TZ.
+            if (warm != null && warm.key != exitingKey && warm.key != behind?.key && warm.key != top?.key) {
+                add(warm to CardRole.Warm)
+            }
             if (behind != null && behind.key != exitingKey) add(behind to CardRole.Behind)
             if (top != null && top.key != exitingKey) add(top to CardRole.Top)
             exiting?.let { add(it.group to CardRole.Exiting) }
@@ -509,10 +515,12 @@ private fun flingTarget(direction: SwipeDirection, current: Offset): Offset = wh
 /**
  * One instance per photo for its whole life in the stack (see the [CardStack] doc for why that
  * matters). [role] switches what's drawn/interactive without ever recreating this composable:
- * - [CardRole.Behind]: static, non-interactive, no gesture attached.
+ * - [CardRole.Warm]: composed (so its border exists ahead of time — see [CardStack]) but fully
+ *   transparent and non-interactive; not actually visible in the stack yet.
+ * - [CardRole.Behind]: visible, static, non-interactive, no gesture attached.
  * - [CardRole.Top]: draggable/zoomable, the only role with `pointerInput` attached.
- * - [CardRole.Exiting]: no gesture; plays the fly-out animation once via [exitDirection], then
- *   calls [onExitFinished].
+ * - [CardRole.Exiting]: no gesture, no border; plays the fly-out animation once via
+ *   [exitDirection], then calls [onExitFinished].
  */
 @Composable
 private fun SwipeCardSlot(
@@ -590,12 +598,17 @@ private fun SwipeCardSlot(
     SwipeCard(
         group = group,
         isZoomed = isZoomed,
-        showBorder = role == CardRole.Top,
+        // Drawn on Warm/Behind too, not only Top — see the CardStack doc on why the border needs
+        // to already be there before a card is ever promoted.
+        showBorder = role != CardRole.Exiting,
         cornerRadiusDp = cardCornerRadiusDp,
         borderWidthDp = cardBorderWidthDp,
         modifier = Modifier
             .size(cardWidth, cardHeight)
             .graphicsLayer {
+                // Composed (for its border and decode) but not actually part of the visible stack
+                // yet — see CardRole.Warm.
+                if (role == CardRole.Warm) alpha = 0f
                 transformOrigin = zoomOrigin
                 val renderOffset = dragOffset + flingOffset.value
                 translationX = renderOffset.x + zoomPan.value.x
