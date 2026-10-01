@@ -1,5 +1,6 @@
 package com.roomie.app.ui.screens.swipe
 
+import android.os.SystemClock
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VectorConverter
@@ -63,6 +64,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -79,6 +81,7 @@ import com.roomie.app.ui.strings.LocalAppStrings
 import com.roomie.app.ui.theme.SwipeLeftDelete
 import com.roomie.app.ui.theme.SwipePostpone
 import com.roomie.app.ui.theme.SwipeRightKeep
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -89,7 +92,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 
 private const val SWIPE_THRESHOLD_DP = 120f
-private const val MAX_PEEK_ZOOM = 2.5f
+internal const val MAX_PEEK_ZOOM = 2.5f
 
 /** A fast flick can commit a swipe even when released well short of [SWIPE_THRESHOLD_DP] — see
  *  [dominantSign] and its call site in [SwipeCardSlot]'s `onDragEnd`. */
@@ -432,6 +435,9 @@ private fun CardStack(
                 ImageRequest.Builder(context)
                     .data(group.cover.uri)
                     .size(widthPx, heightPx)
+                    // Same key SwipeCard looks up (see screenCacheKey) — without it this warm-up
+                    // lands under Coil's auto-derived key and the card decodes the photo again.
+                    .memoryCacheKey(screenCacheKey(group.cover.uri, widthPx, heightPx))
                     .build(),
             )
         }
@@ -591,12 +597,15 @@ private fun SwipeCardSlot(
     var dragOffset by remember(group.key) { mutableStateOf(Offset.Zero) }
     val flingOffset = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
     val scale = remember(group.key) { Animatable(1f) }
-    val zoomPan = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
+    // Plain state, written directly from the pointer callback like dragOffset — a launched snapTo
+    // per event queues behind the dispatcher and reads a stale value, so the pan lagged and lost deltas.
+    var zoomPan by remember(group.key) { mutableStateOf(Offset.Zero) }
+    var zoomPanReturnJob by remember(group.key) { mutableStateOf<Job?>(null) }
     var zoomOrigin by remember(group.key) { mutableStateOf(TransformOrigin.Center) }
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     var pastThreshold by remember(group.key) { mutableStateOf(false) }
-    // While zoomed, SwipeCard switches to requesting the source's full resolution instead of a
+    // While zoomed, SwipeCard switches to requesting a MAX_PEEK_ZOOM-sized decode instead of a
     // screen-sized one — worth the extra decode time only for this deliberate, held-down peek.
     var isZoomed by remember(group.key) { mutableStateOf(false) }
     val density = LocalDensity.current
@@ -684,8 +693,8 @@ private fun SwipeCardSlot(
             .graphicsLayer {
                 transformOrigin = zoomOrigin
                 val renderOffset = dragOffset + flingOffset.value
-                translationX = renderOffset.x + zoomPan.value.x
-                translationY = renderOffset.y + zoomPan.value.y
+                translationX = renderOffset.x + zoomPan.x
+                translationY = renderOffset.y + zoomPan.y
                 applySwipeStyle(animationStyle, renderOffset, thresholdPx, cardWidthPx, cardHeightPx, baseScale = scale.value)
             }
             .then(
@@ -770,6 +779,7 @@ private fun SwipeCardSlot(
                                 }
                             },
                             onZoomStart = { origin ->
+                                zoomPanReturnJob?.cancel()
                                 zoomOrigin = origin
                                 isZoomed = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -778,25 +788,11 @@ private fun SwipeCardSlot(
                             onZoomPan = { delta ->
                                 val maxPanX = cardWidthPx * (scale.value - 1f) / 2f
                                 val maxPanY = cardHeightPx * (scale.value - 1f) / 2f
-                                val newPan = zoomPan.value + delta
-                                // scope.launch is required here, not just an optimization detail:
-                                // this callback runs inside awaitEachGesture's restricted-suspension
-                                // coroutine (AwaitPointerEventScope), which the Kotlin compiler only
-                                // allows to call suspend functions on that same receiver type —
-                                // Animatable.snapTo is a suspend member of an unrelated type, so
-                                // calling it directly here is a compile error ("Restricted suspending
-                                // functions can only invoke member or extension suspending functions
-                                // on their restricted coroutine scope"), not just a style choice.
-                                // launch{} starts a genuinely separate coroutine to escape that
-                                // restriction, same as this code did before.
-                                scope.launch {
-                                    zoomPan.snapTo(
-                                        Offset(
-                                            newPan.x.coerceIn(-maxPanX, maxPanX),
-                                            newPan.y.coerceIn(-maxPanY, maxPanY),
-                                        ),
-                                    )
-                                }
+                                val newPan = zoomPan + delta
+                                zoomPan = Offset(
+                                    newPan.x.coerceIn(-maxPanX, maxPanX),
+                                    newPan.y.coerceIn(-maxPanY, maxPanY),
+                                )
                             },
                             onZoomEnd = {
                                 // A quick peek, not a decision: as soon as the finger lifts, the
@@ -807,7 +803,10 @@ private fun SwipeCardSlot(
                                 zoomOrigin = TransformOrigin.Center
                                 isZoomed = false
                                 scope.launch { scale.animateTo(1f, ZOOM_SPRING) }
-                                scope.launch { zoomPan.animateTo(Offset.Zero, ZOOM_PAN_SPRING) }
+                                zoomPanReturnJob = scope.launch {
+                                    Animatable(zoomPan, Offset.VectorConverter)
+                                        .animateTo(Offset.Zero, ZOOM_PAN_SPRING) { zoomPan = value }
+                                }
                             },
                         )
                     }
@@ -842,9 +841,14 @@ private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
         var totalDrag = Offset.Zero
         var isZoom = false
         var isSwipe = false
+        var slopRemainder = Offset.Zero
+        // One deadline for the whole press. A fresh timeout per event restarted on every tiny finger
+        // jitter, so a hold that wasn't perfectly still never became a zoom.
+        val longPressDeadline = SystemClock.uptimeMillis() + viewConfiguration.longPressTimeoutMillis
 
         while (!isZoom && !isSwipe) {
-            val event = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { awaitPointerEvent() }
+            val remaining = longPressDeadline - SystemClock.uptimeMillis()
+            val event = if (remaining <= 0L) null else withTimeoutOrNull(remaining) { awaitPointerEvent() }
             if (event == null) {
                 isZoom = true
                 break
@@ -852,10 +856,14 @@ private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
             val change = event.changes.firstOrNull { it.positionChanged() }
             if (change != null) {
                 totalDrag += change.positionChange()
-                velocityTracker.addPosition(change.uptimeMillis, change.position)
+                velocityTracker.addPointerInputChange(change)
                 change.consume()
                 if (hypot(totalDrag.x, totalDrag.y) > viewConfiguration.touchSlop) {
                     isSwipe = true
+                    // The card starts moving from where slop was crossed, not from the touch-down
+                    // point — otherwise the whole slop distance (~8dp) lands in one frame as a jump.
+                    val len = hypot(totalDrag.x, totalDrag.y)
+                    slopRemainder = totalDrag - totalDrag * (viewConfiguration.touchSlop / len)
                 }
             }
             if (event.changes.none { it.pressed }) {
@@ -883,13 +891,13 @@ private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
             }
             onZoomEnd()
         } else {
-            onDrag(totalDrag)
+            onDrag(slopRemainder)
             while (true) {
                 val event = awaitPointerEvent()
                 val change = event.changes.firstOrNull { it.positionChanged() }
                 if (change != null) {
                     onDrag(change.positionChange())
-                    velocityTracker.addPosition(change.uptimeMillis, change.position)
+                    velocityTracker.addPointerInputChange(change)
                     change.consume()
                 }
                 if (event.changes.none { it.pressed }) break
