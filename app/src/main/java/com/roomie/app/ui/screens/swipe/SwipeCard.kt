@@ -1,5 +1,6 @@
 package com.roomie.app.ui.screens.swipe
 
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,7 +36,6 @@ import coil3.imageLoader
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.request.crossfade
-import coil3.size.Size
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.ui.components.InlineVideoPlayer
 import com.roomie.app.ui.strings.LocalAppStrings
@@ -50,6 +50,12 @@ private const val ZOOM_WARM_SIZE_PX = 1600
  *  cancels this (along with the rest of the composition) before it ever fires, so quick browsing
  *  never pays for a warm-up decode it won't use. */
 private const val ZOOM_WARM_LINGER_MS = 450L
+
+/** Single source of truth for the screen-sized decode's memory-cache key. SwipeCard reads it, and
+ *  CardStack's prefetch of stack[2] writes it — they MUST agree or the prefetch warms an entry the
+ *  card never finds and the photo is decoded again the moment it becomes the top card. */
+internal fun screenCacheKey(uri: Uri, widthPx: Int, heightPx: Int): String =
+    "$uri|screen|${widthPx}x$heightPx"
 
 @Composable
 fun SwipeCard(
@@ -89,8 +95,12 @@ fun SwipeCard(
         // the request's size, which changes Coil's computed cache key unpredictably between the
         // two — placeholderMemoryCacheKey below can only find a match if both branches agree on a
         // stable key for "the other" resolution ahead of time.
-        val screenCacheKey = "${group.cover.uri}|screen|${widthPx}x$heightPx"
-        val originalCacheKey = "${group.cover.uri}|original"
+        val screenKey = screenCacheKey(group.cover.uri, widthPx, heightPx)
+        // Zoom decodes at most MAX_PEEK_ZOOM x the card — never the source's full resolution (a 50 MP
+        // original is ~200 MB of heap). Nothing on screen can show more detail than this.
+        val zoomWidthPx = (widthPx * MAX_PEEK_ZOOM).toInt()
+        val zoomHeightPx = (heightPx * MAX_PEEK_ZOOM).toInt()
+        val zoomKey = "${group.cover.uri}|zoom|${zoomWidthPx}x$zoomHeightPx"
 
         // Warms a mid-resolution decode for a card that's lingered on screen a while, so a later
         // long-press zoom has *something* better than the screen-sized thumbnail to show as a
@@ -129,14 +139,14 @@ fun SwipeCard(
                 // that warm-up existed. A single rare zoom's decode delay beats system-wide jank on
                 // every swipe.
                 // memoryCacheKey/placeholderMemoryCacheKey: keep showing the screen-sized decode
-                // (already on screen a moment ago) while the full original loads, instead of
-                // AsyncImage falling into Loading and showing the bare card background — the two
+                // (already on screen a moment ago) while the zoom-resolution version loads, instead
+                // of AsyncImage falling into Loading and showing the bare card background — the two
                 // branches use different request sizes, so without an explicit shared key Coil has
                 // no way to know the screen-sized decode is a usable placeholder for this one.
                 requestBuilder
-                    .size(Size.ORIGINAL)
-                    .memoryCacheKey(originalCacheKey)
-                    .placeholderMemoryCacheKey(screenCacheKey)
+                    .size(zoomWidthPx, zoomHeightPx)
+                    .memoryCacheKey(zoomKey)
+                    .placeholderMemoryCacheKey(screenKey)
             } else {
                 // Same reasoning as MediaThumbnail's grid tiles: cards cycle through quickly during
                 // a swipe session, and a HARDWARE bitmap's GPU-buffer allocate/free cost (via
@@ -144,10 +154,10 @@ fun SwipeCard(
                 requestBuilder
                     .size(widthPx, heightPx)
                     .allowHardware(false)
-                    .memoryCacheKey(screenCacheKey)
+                    .memoryCacheKey(screenKey)
                     // Symmetric with the isZoomed branch above: zooming back out shouldn't flash
-                    // blank while this decodes if the full-resolution version is already cached.
-                    .placeholderMemoryCacheKey(originalCacheKey)
+                    // blank while this decodes if the zoom-resolution version is already cached.
+                    .placeholderMemoryCacheKey(zoomKey)
             }
             AsyncImage(
                 model = requestBuilder.build(),

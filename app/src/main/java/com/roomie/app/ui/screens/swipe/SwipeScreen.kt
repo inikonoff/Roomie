@@ -83,7 +83,7 @@ import kotlin.math.abs
 import kotlin.math.hypot
 
 private const val SWIPE_THRESHOLD_DP = 120f
-private const val MAX_PEEK_ZOOM = 2.5f
+internal const val MAX_PEEK_ZOOM = 2.5f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -381,6 +381,9 @@ private fun CardStack(
                     .data(group.cover.uri)
                     .size(widthPx, heightPx)
                     .allowHardware(false)
+                    // Same key SwipeCard looks up (see screenCacheKey) — without it this warm-up
+                    // lands under Coil's auto-derived key and the card decodes the photo again.
+                    .memoryCacheKey(screenCacheKey(group.cover.uri, widthPx, heightPx))
                     .build(),
             )
         }
