@@ -109,9 +109,9 @@ fun rememberAllowThumbnailDecode(isScrollInProgress: Boolean): Boolean {
 /**
  * Grid-safe thumbnail for a gallery item. Both photos and videos go through the same shape: a
  * process-wide in-memory [LruCache] hit renders directly via [Image] (no Coil, no disk, no
- * MediaStore); a miss falls through to the on-disk cache, which is always read (cheap, a small
- * local file); only when that also misses does a real decode of the source happen, gated behind
- * [allowDecode] — see [rememberAllowThumbnailDecode]. Videos use
+ * MediaStore); a miss falls through to the on-disk cache — a real [BitmapFactory.decodeFile], so
+ * gated the same as the source decode below — and only when that also misses does a real decode
+ * of the source happen, both gated behind [allowDecode] — see [rememberAllowThumbnailDecode]. Videos use
  * [android.content.ContentResolver.loadThumbnail] directly (API 29+) instead of Coil's video-frame
  * decoder — under a grid's concurrent load, the decoder was unreliable enough that video tiles
  * routinely rendered blank. Below API 29, video falls back to Coil since `loadThumbnail` doesn't
@@ -149,9 +149,11 @@ fun MediaThumbnail(
             // frame-extraction decode, objectively pricier than a photo decode, and until now was
             // only ever cached in memory for the life of the process. dateModified in the key means
             // a video replaced/edited outside Roomie invalidates on its own instead of serving a
-            // stale frame forever. This disk read always runs, even mid-fling — it's a small local
-            // file, cheap enough that gating it bought nothing but the flash bug above.
+            // stale frame forever. The disk read is itself a real BitmapFactory.decodeFile (not
+            // just a cheap file stat), unbounded by the decoder's own concurrency limit — wait for
+            // scrolling to actually stop before starting it, same as the real decode below.
             val cacheKey = "video|$key|$VIDEO_THUMBNAIL_PX|$dateModified"
+            snapshotFlow { allowDecodeState.value }.first { it }
             val fromDisk = withContext(Dispatchers.IO) {
                 val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
                 if (cacheFile.exists()) {
@@ -200,8 +202,10 @@ fun MediaThumbnail(
         val bitmap by produceState(photoThumbnailCache.get(key), uri, dateModified) {
             if (value != null) return@produceState
             val cacheKey = "$key|$dateModified"
-            // Disk-JPEG read always runs, even mid-fling — a small local file is cheap enough that
-            // gating it bought nothing but the white-flash bug (see the video branch's doc above).
+            // The disk read is itself a real BitmapFactory.decodeFile (not just a cheap file
+            // stat), unbounded by the decoder's own concurrency limit — wait for scrolling to
+            // actually stop before starting it, same as the real decode below.
+            snapshotFlow { allowDecodeState.value }.first { it }
             val fromDisk = withContext(Dispatchers.IO) {
                 val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
                 if (cacheFile.exists()) {
