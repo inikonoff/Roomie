@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -151,8 +152,11 @@ fun SwipeCard(
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     // Draw nothing until the sharper bitmap is actually ready. The screen image
-                    // underneath keeps showing, scaled by the slot's graphicsLayer.
-                    if (painter.state is AsyncImagePainter.State.Success) {
+                    // underneath keeps showing, scaled by the slot's graphicsLayer. painter.state
+                    // is a StateFlow in this Coil version, not a Compose State, so it has to be
+                    // collected to both read its current value and recompose when it changes.
+                    val zoomState by painter.state.collectAsState()
+                    if (zoomState is AsyncImagePainter.State.Success) {
                         SubcomposeAsyncImageContent()
                     }
                 }
