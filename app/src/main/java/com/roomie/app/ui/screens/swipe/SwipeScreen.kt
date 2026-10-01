@@ -71,7 +71,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.imageLoader
 import coil3.request.ImageRequest
-import coil3.request.allowHardware
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.data.settings.CardAnimationStyle
 import com.roomie.app.ui.screens.settings.label
@@ -81,6 +80,7 @@ import com.roomie.app.ui.theme.SwipeLeftDelete
 import com.roomie.app.ui.theme.SwipePostpone
 import com.roomie.app.ui.theme.SwipeRightKeep
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -134,6 +134,31 @@ fun SwipeScreen(
         }
     }
 
+    // A deferred-by-one-frame mirror of the header's own numbers — see the release-hitch TZ.
+    // GamifiedProgressBar/counterOfTotal/dateTaken used to read uiState directly, which put their
+    // recomposition in the exact same frame as the stack/top swap, the exit decay starting, and
+    // the next card's prefetch kicking off — already the single heaviest frame in the whole
+    // gesture. Holding the previous card's numbers for one more frame while it's already visibly
+    // flying off is unnoticeable; redoing all four at once is the hitch. hasShownHeaderOnce skips
+    // the delay on the very first population (entering the screen) so the header isn't blank for
+    // a frame when there was never any "release" to spread work away from.
+    var displayedPosition by remember { mutableStateOf(uiState.currentPosition) }
+    var displayedTotal by remember { mutableStateOf(uiState.totalCount) }
+    var displayedDeleted by remember { mutableStateOf(uiState.deletedCount) }
+    var displayedKept by remember { mutableStateOf(uiState.keptCount) }
+    var displayedPostponed by remember { mutableStateOf(uiState.postponedCount) }
+    var displayedDateMillis by remember { mutableStateOf(uiState.currentGroup?.cover?.dateTakenMillis ?: 0L) }
+    var hasShownHeaderOnce by remember { mutableStateOf(false) }
+    LaunchedEffect(uiState.currentGroup?.key, uiState.deletedCount, uiState.keptCount, uiState.postponedCount) {
+        if (hasShownHeaderOnce) delay(32) else hasShownHeaderOnce = true
+        displayedPosition = uiState.currentPosition
+        displayedTotal = uiState.totalCount
+        displayedDeleted = uiState.deletedCount
+        displayedKept = uiState.keptCount
+        displayedPostponed = uiState.postponedCount
+        displayedDateMillis = uiState.currentGroup?.cover?.dateTakenMillis ?: 0L
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -173,14 +198,14 @@ fun SwipeScreen(
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             if (uiState.stack.isNotEmpty()) {
                 GamifiedProgressBar(
-                    deleted = uiState.deletedCount,
-                    kept = uiState.keptCount,
-                    postponed = uiState.postponedCount,
-                    total = uiState.totalCount,
+                    deleted = displayedDeleted,
+                    kept = displayedKept,
+                    postponed = displayedPostponed,
+                    total = displayedTotal,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
                 Text(
-                    strings.counterOfTotal(uiState.currentPosition, uiState.totalCount),
+                    strings.counterOfTotal(displayedPosition, displayedTotal),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
@@ -190,7 +215,7 @@ fun SwipeScreen(
                 // queried (see MediaRepository) — never a fresh MediaStore lookup from composition.
                 // Absent entirely (not "no date") when the source has no DATE_TAKEN/DATE_ADDED at
                 // all, which dateTakenMillis == 0 signals.
-                uiState.currentGroup?.cover?.dateTakenMillis?.takeIf { it > 0 }?.let { millis ->
+                displayedDateMillis.takeIf { it > 0 }?.let { millis ->
                     Text(
                         strings.dateTaken(millis),
                         style = MaterialTheme.typography.labelSmall,
@@ -387,18 +412,26 @@ private fun CardStack(
         // Only stack[0] and stack[1] are actually composed (below) — by the time a fast swiper
         // reaches stack[2] it would otherwise not have started decoding at all. Warming Coil's
         // cache for it one card early removes that gap without paying for a third on-screen card.
+        // Delayed past the release frame on purpose — see the release-hitch TZ: starting this
+        // enqueue() in the very same recomposition that drops the stack and flips the new top card
+        // piled a fourth expensive thing onto the one frame already doing a stack/head swap and
+        // starting the exit decay. Keyed on prefetch?.key alone (not maxWidth/maxHeight too) so a
+        // transient layout pass during that same transition can't cancel and restart the delay —
+        // only the stack actually advancing to a new third card does.
         val context = LocalContext.current
         val density = LocalDensity.current
-        LaunchedEffect(prefetch?.key, maxWidth, maxHeight) {
+        LaunchedEffect(prefetch?.key) {
             val group = prefetch ?: return@LaunchedEffect
+            delay(48)
             val (w, h) = fitSize(group.cover.aspectRatio, maxWidth, maxHeight)
             val widthPx = with(density) { w.roundToPx() }.coerceAtLeast(1)
             val heightPx = with(density) { h.roundToPx() }.coerceAtLeast(1)
+            // Hardware bitmaps are fine here — this is a background cache warm, never read back on
+            // the CPU. Only a live pinch-zoom (SwipeCard's isZoomed branch) needs software.
             context.imageLoader.enqueue(
                 ImageRequest.Builder(context)
                     .data(group.cover.uri)
                     .size(widthPx, heightPx)
-                    .allowHardware(false)
                     .build(),
             )
         }

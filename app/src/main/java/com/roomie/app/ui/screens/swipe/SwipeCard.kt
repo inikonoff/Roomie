@@ -96,7 +96,8 @@ fun SwipeCard(
         // long-press zoom has *something* better than the screen-sized thumbnail to show as a
         // placeholder while the full original decodes — see ZOOM_WARM_LINGER_MS/ZOOM_WARM_SIZE_PX.
         // Not Size.ORIGINAL: framestats on a real device traced that full-resolution warm-up as the
-        // main source of p99 350-500ms frame spikes during ordinary swiping.
+        // main source of p99 350-500ms frame spikes during ordinary swiping. Hardware bitmap is
+        // fine here — not zoomed yet (that's the guard below), never read back on the CPU.
         LaunchedEffect(group.cover.uri, isZoomed) {
             if (isZoomed || group.cover.isVideo) return@LaunchedEffect
             delay(ZOOM_WARM_LINGER_MS)
@@ -104,7 +105,6 @@ fun SwipeCard(
                 ImageRequest.Builder(context)
                     .data(group.cover.uri)
                     .size(ZOOM_WARM_SIZE_PX, ZOOM_WARM_SIZE_PX)
-                    .allowHardware(false)
                     .memoryCacheKey("${group.cover.uri}|zoomwarm|$ZOOM_WARM_SIZE_PX")
                     .build(),
             )
@@ -133,17 +133,22 @@ fun SwipeCard(
                 // AsyncImage falling into Loading and showing the bare card background — the two
                 // branches use different request sizes, so without an explicit shared key Coil has
                 // no way to know the screen-sized decode is a usable placeholder for this one.
+                // allowHardware(false): a hardware bitmap can't be safely cropped/read back on the
+                // CPU, which the pinch-pan while zoomed needs — see the release-hitch TZ. The only
+                // branch that actually requires software.
                 requestBuilder
                     .size(Size.ORIGINAL)
+                    .allowHardware(false)
                     .memoryCacheKey(originalCacheKey)
                     .placeholderMemoryCacheKey(screenCacheKey)
             } else {
-                // Same reasoning as MediaThumbnail's grid tiles: cards cycle through quickly during
-                // a swipe session, and a HARDWARE bitmap's GPU-buffer allocate/free cost (via
-                // gralloc IPC) is paid on every single one of them.
+                // Hardware bitmap allowed here — no CPU-side crop/read happens while just sitting
+                // on screen or during a role change (Behind <-> Top), only during an actual pinch
+                // zoom (the branch above). Request size/memoryCacheKey are the same regardless of
+                // role for a given card (same fitSize, same container), so a card moving from
+                // Behind to Top never starts a second decode of its own image.
                 requestBuilder
                     .size(widthPx, heightPx)
-                    .allowHardware(false)
                     .memoryCacheKey(screenCacheKey)
                     // Symmetric with the isZoomed branch above: zooming back out shouldn't flash
                     // blank while this decodes if the full-resolution version is already cached.
