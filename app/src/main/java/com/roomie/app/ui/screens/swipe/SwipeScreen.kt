@@ -49,8 +49,10 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -84,7 +86,7 @@ import com.roomie.app.ui.theme.SwipeRightKeep
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
@@ -470,21 +472,17 @@ private fun CardStack(
                     exitDirection = if (role == CardRole.Exiting) exiting?.direction else null,
                     exitOffset = if (role == CardRole.Exiting) exiting?.offset else null,
                     exitVelocity = if (role == CardRole.Exiting) exiting?.velocity else null,
+                    // Optimistic: mark this slot exiting immediately, before the ViewModel has
+                    // been asked anything — see the release-frame TZ. The finger-up frame must
+                    // show the card already moving; asking first (the old behavior) meant nothing
+                    // could start until swipe() had already rewritten uiState.stack, putting the
+                    // stack/head swap and the first visible motion in the same frame. Confirmation
+                    // (and the spring-back if rejected) now happens inside SwipeCardSlot's own exit
+                    // effect, one frame later — see its onSwiped call.
                     onCommitted = { direction, releaseOffset, axisVelocity ->
-                        // Ask the ViewModel first: a rejected swipe (e.g. Move-to-folder with no
-                        // target configured — see SwipeSessionViewModel.swipe) must never touch
-                        // `exiting` at all, so the card can spring back to center exactly as if
-                        // the threshold had never been crossed instead of flying off to nowhere.
-                        val accepted = onSwiped(direction)
-                        if (accepted) {
-                            // Snapshot offset first, mark this slot as exiting second — so the
-                            // exiting state (and the offset it needs) is already set before
-                            // anything downstream could observe the stack without it, which is
-                            // what a successful-swipe skip/pop would look like.
-                            exiting = ExitingCardState(group, direction, releaseOffset, axisVelocity)
-                        }
-                        accepted
+                        exiting = ExitingCardState(group, direction, releaseOffset, axisVelocity)
                     },
+                    onSwiped = onSwiped,
                     // Guarded by group.key: a swipe committed before the previous card's own
                     // fly-out finished overwrites `exiting` with the new card before the old one's
                     // LaunchedEffect(exitDirection) below ever calls onExitFinished — its key()
@@ -566,10 +564,12 @@ private fun dominantSign(offsetComponent: Float, velocityComponent: Float): Floa
 /**
  * One instance per photo for its whole life in the stack (see the [CardStack] doc for why that
  * matters). [role] switches what's drawn/interactive without ever recreating this composable:
- * - [CardRole.Behind]: static, non-interactive, no gesture attached.
- * - [CardRole.Top]: draggable/zoomable, the only role with `pointerInput` attached.
- * - [CardRole.Exiting]: no gesture; plays the fly-out animation once via [exitDirection], then
- *   calls [onExitFinished].
+ * - [CardRole.Behind]: static visually, but still carries the `pointerInput` gesture modifier
+ *   (gated inactive — see [detectSwipeOrLongPressZoom]'s `isActive`) so promotion to Top never has
+ *   to insert it into the modifier chain — see the release-frame TZ.
+ * - [CardRole.Top]: draggable/zoomable; the only role where the gesture modifier is actually live.
+ * - [CardRole.Exiting]: no gesture modifier at all (removed, same as before); plays the fly-out
+ *   animation once via [exitDirection], then calls [onExitFinished].
  */
 @Composable
 private fun SwipeCardSlot(
@@ -583,7 +583,8 @@ private fun SwipeCardSlot(
     exitDirection: SwipeDirection?,
     exitOffset: Offset?,
     exitVelocity: Float?,
-    onCommitted: (SwipeDirection, Offset, Float) -> Boolean,
+    onCommitted: (SwipeDirection, Offset, Float) -> Unit,
+    onSwiped: (SwipeDirection) -> Boolean,
     onExitFinished: () -> Unit,
 ) {
     // Written to directly on every pointer-move event instead of through a suspend Animatable —
@@ -605,6 +606,11 @@ private fun SwipeCardSlot(
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     var pastThreshold by remember(group.key) { mutableStateOf(false) }
+    // Read inside the long-lived pointerInput coroutine below (which now stays attached across a
+    // Behind<->Top role flip instead of being added/removed — see the release-frame TZ) to gate
+    // whether a gesture is actually live, without needing to restart that coroutine on every role
+    // change.
+    val currentRole = rememberUpdatedState(role)
     // While zoomed, SwipeCard switches to requesting a MAX_PEEK_ZOOM-sized decode instead of a
     // screen-sized one — worth the extra decode time only for this deliberate, held-down peek.
     var isZoomed by remember(group.key) { mutableStateOf(false) }
@@ -646,6 +652,10 @@ private fun SwipeCardSlot(
     LaunchedEffect(group.key, exitDirection, exitOffset, exitVelocity) {
         if (exitDirection == null || exitOffset == null || exitVelocity == null) return@LaunchedEffect
         try {
+            // This block runs as part of processing the very recomposition that set `exiting` —
+            // see the release-frame TZ. snapTo + launching decay below both happen before this
+            // coroutine's first suspension point (withFrameNanos further down), so the card is
+            // already moving in that same frame; swipe() itself isn't called until a frame later.
             flingOffset.snapTo(exitOffset)
             dragOffset = Offset.Zero
             // Perpendicular component dropped entirely (not just left at its release value) so the
@@ -654,28 +664,46 @@ private fun SwipeCardSlot(
                 SwipeDirection.LEFT, SwipeDirection.RIGHT -> Offset(exitVelocity, 0f)
                 SwipeDirection.UP, SwipeDirection.DOWN -> Offset(0f, exitVelocity)
             }
-            // animateDecay's own natural end (velocity decayed to ~0) is not a reliable finish
-            // line here — exitVelocity is floored (see MIN_DECAY_VELOCITY_DP) so this almost always
-            // reaches the edge well before that, but nothing guarantees it, and waiting for it
-            // anyway would leave Exiting sitting in the stack, still eating touches, long after the
-            // card has visually left. Race a watcher against the decay instead: whichever notices
-            // the card is now fully past its own width/height along the exit axis stops the other.
-            // watcher.cancel() after animateDecay returns is what prevents the opposite case (decay
-            // finishing or getting stopped) from leaving an orphaned watcher awaiting a condition
-            // that will now never arrive, since flingOffset.value stops changing once decay ends.
             coroutineScope {
-                val watcher = launch {
-                    snapshotFlow { flingOffset.value }
-                        .first { value ->
-                            when (exitDirection) {
-                                SwipeDirection.LEFT, SwipeDirection.RIGHT -> abs(value.x) > cardWidthPx
-                                SwipeDirection.UP, SwipeDirection.DOWN -> abs(value.y) > cardHeightPx
-                            }
+                val decayJob = launch { flingOffset.animateDecay(initialVelocity, decayAnimationSpec) }
+                // animateDecay's own natural end (velocity decayed to ~0) is not a reliable finish
+                // line here — exitVelocity is floored (see MIN_DECAY_VELOCITY_DP) so this almost
+                // always reaches the edge well before that, but nothing guarantees it, and waiting
+                // for it anyway would leave Exiting sitting in the stack, still eating touches, long
+                // after the card has visually left. A plain withFrameMillis poll instead of a
+                // snapshotFlow collector — the latter re-subscribes a snapshot observer and resumes
+                // a coroutine on every single write to flingOffset.value, which during an actively
+                // animating decay is extra recurring work on top of an already the heaviest moment
+                // in the whole gesture; withFrameMillis only ever ticks once per actual frame.
+                val watcherJob = launch {
+                    while (isActive) {
+                        withFrameMillis {}
+                        val value = flingOffset.value
+                        val exited = when (exitDirection) {
+                            SwipeDirection.LEFT, SwipeDirection.RIGHT -> abs(value.x) > cardWidthPx
+                            SwipeDirection.UP, SwipeDirection.DOWN -> abs(value.y) > cardHeightPx
                         }
+                        if (exited) break
+                    }
                     flingOffset.stop()
                 }
-                flingOffset.animateDecay(initialVelocity, decayAnimationSpec)
-                watcher.cancel()
+                // Confirm with the ViewModel one frame after the card has already started flying —
+                // never before, so the finger-up frame itself only ever does local animation work
+                // (snapTo + starting decay). swipe() runs here, not in onDragEnd, specifically so
+                // its uiState.stack rewrite (and the header/role-promotion recomposition it drives)
+                // lands a frame later than the card's own first visible motion.
+                withFrameNanos {}
+                if (onSwiped(exitDirection)) {
+                    decayJob.join()
+                } else {
+                    // Rejected (e.g. Move-to-folder with no target) — swipe() never touched the
+                    // stack, so springing back here is enough: once onExitFinished below clears
+                    // `exiting`, this slot resumes as an interactive Top on its own.
+                    flingOffset.stop()
+                    flingOffset.animateTo(Offset.Zero, SWIPE_SPRING)
+                    dragOffset = Offset.Zero
+                }
+                watcherJob.cancel()
             }
         } finally {
             onExitFinished()
@@ -698,11 +726,20 @@ private fun SwipeCardSlot(
                 applySwipeStyle(animationStyle, renderOffset, thresholdPx, cardWidthPx, cardHeightPx, baseScale = scale.value)
             }
             .then(
-                if (role != CardRole.Top) {
+                // Attached whenever this slot could plausibly become Top (i.e. always except
+                // while actually Exiting) — never added/removed purely because Behind got
+                // promoted — see the release-frame TZ. That promotion no longer touches this
+                // modifier chain at all, only `currentRole.value` (read inside the gesture
+                // detector below), avoiding the structural measure/layout pass a modifier
+                // insertion costs right in the one frame that's already doing a stack/head swap.
+                // Still keyed on group.key only: the long-lived `awaitEachGesture` loop inside
+                // survives the role flip untouched, same as every other remembered state here.
+                if (role == CardRole.Exiting) {
                     Modifier
                 } else {
                     Modifier.pointerInput(group.key) {
                         detectSwipeOrLongPressZoom(
+                            isActive = { currentRole.value == CardRole.Top },
                             onDrag = { dragAmount ->
                                 dragOffset += dragAmount
                                 val crossed = abs(dragOffset.x) > thresholdPx || abs(dragOffset.y) > thresholdPx
@@ -765,17 +802,13 @@ private fun SwipeCardSlot(
                                     // instead of letting the exit animation re-read dragOffset/
                                     // flingOffset later — see the LaunchedEffect above for why a
                                     // live re-read at that later point can race with a stray
-                                    // leftover spring-back coroutine. The actual fly-out animation
-                                    // is driven by this same instance's own LaunchedEffect, once
-                                    // CardStack's next recomposition flips this slot's role to
-                                    // Exiting with this direction/offset/velocity — but only if the
-                                    // ViewModel actually accepted the swipe; a rejected one (e.g. no
-                                    // Move-to-folder target configured) springs back to center
-                                    // exactly like a below-threshold release, as if the gesture had
-                                    // not happened.
-                                    if (!onCommitted(direction, current, axisExitVelocity)) {
-                                        scope.launch { springBackToCenter() }
-                                    }
+                                    // leftover spring-back coroutine. Fire-and-forget: onCommitted
+                                    // just flips this slot to Exiting and lets its own LaunchedEffect
+                                    // start the fly-out this same frame — whether the ViewModel
+                                    // actually accepts the swipe is confirmed a frame later from
+                                    // inside that effect, which springs back to center itself if
+                                    // rejected (e.g. no Move-to-folder target configured).
+                                    onCommitted(direction, current, axisExitVelocity)
                                 }
                             },
                             onZoomStart = { origin ->
@@ -826,8 +859,16 @@ private fun SwipeCardSlot(
  * portion (the pre-resolution exploring phase counts, a resolved zoom never does — nothing reads
  * the tracker in that branch) — so a long-press-to-zoom gesture never feeds its own, unrelated
  * motion into a swipe decision.
+ *
+ * [isActive] is checked once per gesture, right after the down event — this modifier now stays
+ * attached across a Behind<->Top role flip (see the release-frame TZ) instead of being added only
+ * while Top, so without this check a Behind card's own long-lived `awaitEachGesture` loop would
+ * start reacting to touches too. In practice Top's own card is drawn above Behind's at the same
+ * position, so Behind essentially never receives a down event anyway — this is a cheap, explicit
+ * guard against that assumption, not the thing doing the real work.
  */
 private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
+    isActive: () -> Boolean,
     onDrag: (Offset) -> Unit,
     onDragEnd: (velocity: Offset) -> Unit,
     onZoomStart: (TransformOrigin) -> Unit,
@@ -836,6 +877,7 @@ private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
 ) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
+        if (!isActive()) return@awaitEachGesture
         val velocityTracker = VelocityTracker()
         velocityTracker.addPosition(down.uptimeMillis, down.position)
         var totalDrag = Offset.Zero
