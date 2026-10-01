@@ -66,9 +66,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil3.imageLoader
-import coil3.request.ImageRequest
-import coil3.request.allowHardware
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.data.settings.CardAnimationStyle
 import com.roomie.app.ui.screens.settings.label
@@ -365,28 +362,13 @@ private fun CardStack(
     val warm = stack.getOrNull(2)
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        // stack[2] is now also composed below (role Warm, invisible) so its border is already in
-        // the tree before it's ever promoted to Behind/Top — see the border-measure TZ. The decode
-        // warm-up stays regardless, since composing the slot doesn't by itself start a request;
-        // without this, a fast swiper would reach it before it ever started decoding.
-        val context = LocalContext.current
-        val density = LocalDensity.current
-        LaunchedEffect(warm?.key, maxWidth, maxHeight) {
-            val group = warm ?: return@LaunchedEffect
-            val (w, h) = fitSize(group.cover.aspectRatio, maxWidth, maxHeight)
-            val widthPx = with(density) { w.roundToPx() }.coerceAtLeast(1)
-            val heightPx = with(density) { h.roundToPx() }.coerceAtLeast(1)
-            context.imageLoader.enqueue(
-                ImageRequest.Builder(context)
-                    .data(group.cover.uri)
-                    .size(widthPx, heightPx)
-                    .allowHardware(false)
-                    // Same key SwipeCard looks up (see screenCacheKey) — without it this warm-up
-                    // lands under Coil's auto-derived key and the card decodes the photo again.
-                    .memoryCacheKey(screenCacheKey(group.cover.uri, widthPx, heightPx))
-                    .build(),
-            )
-        }
+        // stack[2] is composed below (role Warm, invisible) so its border is already in the tree
+        // before it's ever promoted to Behind/Top — see the border-measure TZ. That same Warm slot
+        // is also now stack[2]'s only decode source: its own AsyncImage (inside SwipeCard) requests
+        // the same screenCacheKey that Behind/Top later read, so there's no separate prefetch to
+        // keep in sync — a dedicated enqueue() here used to run concurrently with that AsyncImage's
+        // own request for the same key, Coil 3.0 doesn't de-duplicate identical in-flight requests,
+        // and the photo could end up decoded twice on the heaviest frame of the swipe.
 
         // A key must appear at most once per composition of this loop, or Compose throws at
         // runtime ("key was used multiple times"). The one case that could collide: Browse mode's
