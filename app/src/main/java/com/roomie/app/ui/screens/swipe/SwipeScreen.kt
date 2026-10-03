@@ -1,9 +1,11 @@
 package com.roomie.app.ui.screens.swipe
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -470,15 +472,23 @@ private fun GraphicsLayerScope.applySwipeStyle(
     }
 }
 
-// A critically damped spring's settling time depends on stiffness, not on how far it travels —
-// at StiffnessMedium it was reaching the 1600px exit target in ~100-150ms regardless, so almost
-// the entire curve played out past the screen edge where it's invisible, and a committed swipe
-// looked like a snap/teleport rather than a flight. StiffnessLow stretches that to ~250-300ms,
-// long enough that the deceleration is still visible before the card clears the screen.
+// Only the cancelled-swipe return-to-center now — the exit fling has its own EXIT_TWEEN below.
+// A spring's feel here (settling into place) is still what a cancelled drag wants; the exit
+// wanted a duration it could own directly instead.
 private val SWIPE_SPRING = spring<Offset>(
     dampingRatio = Spring.DampingRatioNoBouncy,
     stiffness = Spring.StiffnessLow,
 )
+
+// Duration-based on purpose: a spring's settling time is set by stiffness, not by how far it
+// travels, which made the exit's distance (FLING_DISTANCE, chosen to clear the screen on any
+// device) and its felt speed impossible to tune independently — shortening the distance alone
+// would have made a fixed-stiffness spring take *longer* to cross a given on-screen point, not
+// shorter, since that point then falls later in the same decelerating curve. A fixed duration
+// sidesteps that: however far FLING_DISTANCE is, the card covers it in exactly this long.
+// FastOutLinearInEasing (accelerate, then roughly constant) is Material's own curve for elements
+// leaving the screen.
+private val EXIT_TWEEN = tween<Offset>(durationMillis = 200, easing = FastOutLinearInEasing)
 
 private val ZOOM_SPRING = spring<Float>(
     dampingRatio = Spring.DampingRatioNoBouncy,
@@ -576,7 +586,7 @@ private fun SwipeCardSlot(
         try {
             flingOffset.snapTo(exitOffset)
             dragOffset = Offset.Zero
-            flingOffset.animateTo(flingTarget(exitDirection, exitOffset), SWIPE_SPRING)
+            flingOffset.animateTo(flingTarget(exitDirection, exitOffset), EXIT_TWEEN)
         } finally {
             onExitFinished()
         }
