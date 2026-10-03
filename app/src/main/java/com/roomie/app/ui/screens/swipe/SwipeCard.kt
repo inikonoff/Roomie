@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -37,8 +38,8 @@ import coil3.compose.SubcomposeAsyncImage
 import coil3.compose.SubcomposeAsyncImageContent
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
-import coil3.size.Precision
 import coil3.request.crossfade
+import coil3.size.Precision
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.ui.components.InlineVideoPlayer
 import com.roomie.app.ui.strings.LocalAppStrings
@@ -102,13 +103,16 @@ fun SwipeCard(
             // Screen-sized image stays mounted for the whole life of the card. Zoom used to swap
             // this request for a different size/key; Coil dropped the current bitmap, painted the
             // surface background, then faded the new decode in.
-            // Precision.EXACT: without it, Coil's default (AUTOMATIC) often skips the final resize
-            // after decoding at the nearest power-of-two inSampleSize, leaving the bitmap larger
-            // than widthPx/heightPx. That gets minified at draw time by a single-sample bilinear
-            // pass with no mip-level averaging behind it, which aliases a diagonal edge into visible
-            // steps — exactly what photo noise otherwise dithers away. EXACT forces Coil to do one
-            // proper filtered resize to the exact target size, so there's no further minification
-            // left for the draw call to alias.
+            // Precision.EXACT makes Coil resize to exactly widthPx/heightPx at decode time instead
+            // of possibly leaving a leftover inSampleSize-rounded bitmap for Compose to scale later.
+            // Confirmed on-device this alone does NOT fix the diagonal-edge staircase below — kept
+            // anyway since decoding at the exact size we're about to draw is correct regardless.
+            // filterQuality = High is the actual fix for the staircase: stock Gallery (View-based,
+            // hardware-accelerated ImageView) shows the same photo at the same on-screen scale with
+            // a clean diagonal; Compose's default FilterQuality.Low is a single-tap bilinear sample
+            // with no mip chain behind it, which aliases a strong minification the way a plain
+            // bilinear (as opposed to trilinear/mipmapped) minify always does. High asks Skia for
+            // its higher-quality sampling instead.
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(group.cover.uri)
@@ -120,6 +124,7 @@ fun SwipeCard(
                     .build(),
                 contentDescription = group.cover.displayName,
                 contentScale = ContentScale.Fit,
+                filterQuality = FilterQuality.High,
                 modifier = Modifier.fillMaxSize(),
             )
             if (isZoomed && !group.cover.isVideo) {
@@ -135,6 +140,7 @@ fun SwipeCard(
                         .build(),
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
+                    filterQuality = FilterQuality.High,
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     // Draw nothing until the sharper bitmap is actually ready. The screen image
