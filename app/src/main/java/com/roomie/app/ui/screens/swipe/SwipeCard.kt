@@ -37,6 +37,7 @@ import coil3.compose.SubcomposeAsyncImage
 import coil3.compose.SubcomposeAsyncImageContent
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
+import coil3.size.Precision
 import coil3.request.crossfade
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.ui.components.InlineVideoPlayer
@@ -101,10 +102,18 @@ fun SwipeCard(
             // Screen-sized image stays mounted for the whole life of the card. Zoom used to swap
             // this request for a different size/key; Coil dropped the current bitmap, painted the
             // surface background, then faded the new decode in.
+            // Precision.EXACT: without it, Coil's default (AUTOMATIC) often skips the final resize
+            // after decoding at the nearest power-of-two inSampleSize, leaving the bitmap larger
+            // than widthPx/heightPx. That gets minified at draw time by a single-sample bilinear
+            // pass with no mip-level averaging behind it, which aliases a diagonal edge into visible
+            // steps — exactly what photo noise otherwise dithers away. EXACT forces Coil to do one
+            // proper filtered resize to the exact target size, so there's no further minification
+            // left for the draw call to alias.
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(group.cover.uri)
                     .size(widthPx, heightPx)
+                    .precision(Precision.EXACT)
                     .allowHardware(false)
                     .memoryCacheKey(screenKey)
                     .crossfade(false)
@@ -118,6 +127,7 @@ fun SwipeCard(
                     model = ImageRequest.Builder(context)
                         .data(group.cover.uri)
                         .size(zoomWidthPx, zoomHeightPx)
+                        .precision(Precision.EXACT)
                         .allowHardware(false)
                         .memoryCacheKey(zoomKey)
                         .placeholderMemoryCacheKey(screenKey)
