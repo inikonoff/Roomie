@@ -470,9 +470,14 @@ private fun GraphicsLayerScope.applySwipeStyle(
     }
 }
 
+// A critically damped spring's settling time depends on stiffness, not on how far it travels —
+// at StiffnessMedium it was reaching the 1600px exit target in ~100-150ms regardless, so almost
+// the entire curve played out past the screen edge where it's invisible, and a committed swipe
+// looked like a snap/teleport rather than a flight. StiffnessLow stretches that to ~250-300ms,
+// long enough that the deceleration is still visible before the card clears the screen.
 private val SWIPE_SPRING = spring<Offset>(
     dampingRatio = Spring.DampingRatioNoBouncy,
-    stiffness = Spring.StiffnessMedium,
+    stiffness = Spring.StiffnessLow,
 )
 
 private val ZOOM_SPRING = spring<Float>(
