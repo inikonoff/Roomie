@@ -514,15 +514,23 @@ private fun flingTarget(direction: SwipeDirection, current: Offset): Offset = wh
  * One instance per photo for its whole life in the stack (see the [CardStack] doc for why that
  * matters). [role] switches what's drawn/interactive without ever recreating this composable:
  * - [CardRole.Warm]: composed (so its border exists ahead of time — see [CardStack]) but fully
- *   transparent and non-interactive; not actually visible in the stack yet.
- * - [CardRole.Behind]: visible, static, non-interactive, no gesture attached.
+ *   transparent and non-interactive; not actually visible in the stack yet. The only role
+ *   `pointerInput` isn't attached for — a Warm card is never mid-interaction when promoted, so
+ *   there's nothing to hand off.
+ * - [CardRole.Behind]: visible, static, but `pointerInput` is already attached (inert — see
+ *   below) so promoting it straight to Top on the very frame a swipe commits never has to insert
+ *   that modifier then. Promotion happens in the same recomposition as the committed card's own
+ *   Top -> Exiting flip, so a cost paid there would land on the same already-heaviest frame as the
+ *   fling starting — exactly where this was actually surfacing as a stutter.
  * - [CardRole.Top]: draggable/zoomable.
  * - [CardRole.Exiting]: no border; plays the fly-out animation once via [exitDirection], then
  *   calls [onExitFinished]. `pointerInput` stays attached through the Top -> Exiting transition
- *   (removing it right on the release frame was its own measure-pass stutter, landing exactly
- *   where the drag hands off to the fling) — the gesture callbacks themselves check [role] and
- *   no-op once it's no longer Top, so a stray touch on an already-exiting card can't double-commit
- *   it.
+ *   for the same reason as Behind above.
+ *
+ * Since `pointerInput` is attached for every role except Warm, the gesture callbacks themselves
+ * check [role] and no-op whenever it isn't actually Top — that, not the modifier's presence, is
+ * what keeps a Behind card inert and stops a stray touch on an already-exiting one from
+ * double-committing it.
  */
 @Composable
 private fun SwipeCardSlot(
@@ -623,15 +631,20 @@ private fun SwipeCardSlot(
                 applySwipeStyle(animationStyle, renderOffset, thresholdPx, baseScale = scale.value)
             }
             .then(
-                if (role == CardRole.Warm || role == CardRole.Behind) {
+                if (role == CardRole.Warm) {
                     Modifier
                 } else {
-                    // Attached for Top AND Exiting — not just Top — so the handoff from drag to
-                    // fling never has to detach/reattach this node. Compose keyed it on group.key,
-                    // the same key across that role change, so it's the same coroutine continuing,
-                    // not a new one; the role check inside each callback below is what actually
-                    // stops a stray touch from acting on a card that already committed, not the
-                    // modifier's presence.
+                    // Attached for Behind, Top, and Exiting — not just Top — so neither the
+                    // Behind -> Top promotion nor the Top -> Exiting handoff ever has to insert or
+                    // remove this node. Both transitions land in the very same recomposition a
+                    // committed swipe triggers, right alongside the exit animation starting; paying
+                    // a measure pass for either one there was landing on the heaviest frame of the
+                    // swipe and showing up as a stutter exactly at that handoff. Compose keyed this
+                    // on group.key, which doesn't change across any of these role changes, so it's
+                    // the same coroutine continuing throughout, never restarted — the role check
+                    // inside each callback below is what actually stops a Behind card or an
+                    // already-exiting one from reacting to a stray touch, not the modifier's
+                    // presence.
                     Modifier.pointerInput(group.key) {
                         detectSwipeOrLongPressZoom(
                             onDrag = { dragAmount ->
