@@ -49,6 +49,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -515,9 +516,13 @@ private fun flingTarget(direction: SwipeDirection, current: Offset): Offset = wh
  * - [CardRole.Warm]: composed (so its border exists ahead of time — see [CardStack]) but fully
  *   transparent and non-interactive; not actually visible in the stack yet.
  * - [CardRole.Behind]: visible, static, non-interactive, no gesture attached.
- * - [CardRole.Top]: draggable/zoomable, the only role with `pointerInput` attached.
- * - [CardRole.Exiting]: no gesture, no border; plays the fly-out animation once via
- *   [exitDirection], then calls [onExitFinished].
+ * - [CardRole.Top]: draggable/zoomable.
+ * - [CardRole.Exiting]: no border; plays the fly-out animation once via [exitDirection], then
+ *   calls [onExitFinished]. `pointerInput` stays attached through the Top -> Exiting transition
+ *   (removing it right on the release frame was its own measure-pass stutter, landing exactly
+ *   where the drag hands off to the fling) — the gesture callbacks themselves check [role] and
+ *   no-op once it's no longer Top, so a stray touch on an already-exiting card can't double-commit
+ *   it.
  */
 @Composable
 private fun SwipeCardSlot(
@@ -556,6 +561,11 @@ private fun SwipeCardSlot(
     val thresholdPx = with(density) { SWIPE_THRESHOLD_DP.dp.toPx() }
     val cardWidthPx = with(density) { cardWidth.toPx() }
     val cardHeightPx = with(density) { cardHeight.toPx() }
+    // Read by the long-lived pointerInput callbacks below (keyed on group.key, so the same
+    // coroutine survives the Top -> Exiting role change) to tell a stray touch on an
+    // already-committed card that it's too late, without needing to detach/reattach the modifier
+    // itself to do it.
+    val activeRole = rememberUpdatedState(role)
 
     // Fires once per commit — role has already become Exiting with a non-null exitDirection/
     // exitOffset by the time this runs (CardStack sets all three together). Uses exitOffset — the
@@ -613,12 +623,19 @@ private fun SwipeCardSlot(
                 applySwipeStyle(animationStyle, renderOffset, thresholdPx, baseScale = scale.value)
             }
             .then(
-                if (role != CardRole.Top) {
+                if (role == CardRole.Warm || role == CardRole.Behind) {
                     Modifier
                 } else {
+                    // Attached for Top AND Exiting — not just Top — so the handoff from drag to
+                    // fling never has to detach/reattach this node. Compose keyed it on group.key,
+                    // the same key across that role change, so it's the same coroutine continuing,
+                    // not a new one; the role check inside each callback below is what actually
+                    // stops a stray touch from acting on a card that already committed, not the
+                    // modifier's presence.
                     Modifier.pointerInput(group.key) {
                         detectSwipeOrLongPressZoom(
                             onDrag = { dragAmount ->
+                                if (activeRole.value != CardRole.Top) return@detectSwipeOrLongPressZoom
                                 dragOffset += dragAmount
                                 val crossed = abs(dragOffset.x) > thresholdPx || abs(dragOffset.y) > thresholdPx
                                 if (crossed != pastThreshold) {
@@ -627,6 +644,7 @@ private fun SwipeCardSlot(
                                 }
                             },
                             onDragEnd = {
+                                if (activeRole.value != CardRole.Top) return@detectSwipeOrLongPressZoom
                                 // Includes any not-yet-settled flingOffset from a quick re-grab
                                 // right after a previous non-swipe release, so the spring-back
                                 // below picks up exactly where the card visually was instead of
@@ -674,12 +692,14 @@ private fun SwipeCardSlot(
                                 }
                             },
                             onZoomStart = { origin ->
+                                if (activeRole.value != CardRole.Top) return@detectSwipeOrLongPressZoom
                                 zoomOrigin = origin
                                 isZoomed = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 scope.launch { scale.animateTo(MAX_PEEK_ZOOM, ZOOM_SPRING) }
                             },
                             onZoomPan = { delta ->
+                                if (activeRole.value != CardRole.Top) return@detectSwipeOrLongPressZoom
                                 val maxPanX = cardWidthPx * (scale.value - 1f) / 2f
                                 val maxPanY = cardHeightPx * (scale.value - 1f) / 2f
                                 val newPan = zoomPan.value + delta
@@ -703,6 +723,7 @@ private fun SwipeCardSlot(
                                 }
                             },
                             onZoomEnd = {
+                                if (activeRole.value != CardRole.Top) return@detectSwipeOrLongPressZoom
                                 // A quick peek, not a decision: as soon as the finger lifts, the
                                 // photo snaps straight back to its normal size and position. Reset
                                 // the pivot back to center now too — otherwise it would stay
