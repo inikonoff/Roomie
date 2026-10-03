@@ -617,9 +617,11 @@ private fun SwipeCardSlot(
     SwipeCard(
         group = group,
         isZoomed = isZoomed,
-        // Drawn on Warm/Behind too, not only Top — see the CardStack doc on why the border needs
-        // to already be there before a card is ever promoted.
-        showBorder = role != CardRole.Exiting,
+        // Always on, including Exiting — never gate this by role. Removing Modifier.border is the
+        // same measure-pass cost as inserting it (see SwipeCard's own border comment), and gating
+        // it off at Exiting landed that cost on the exact frame the exit fling starts, right next
+        // to the pointerInput attach/detach stutter fixed just above for the same reason.
+        showBorder = true,
         cornerRadiusDp = cardCornerRadiusDp,
         borderWidthDp = cardBorderWidthDp,
         modifier = Modifier
