@@ -501,7 +501,11 @@ private val ZOOM_PAN_SPRING = spring<Offset>(
     stiffness = Spring.StiffnessMedium,
 )
 
-private const val FLING_DISTANCE = 1600f
+// Lowered from 1600 after the exit still looked a little jerky: EXIT_TWEEN's duration is fixed,
+// so distance here is directly proportional to per-frame speed, not inversely as with a spring
+// (see EXIT_TWEEN's own comment) — a shorter distance over the same 200ms means smaller, smoother
+// per-frame steps. Still enough to clear the card past any phone screen's edge.
+private const val FLING_DISTANCE = 1100f
 
 private fun flingTarget(direction: SwipeDirection, current: Offset): Offset = when (direction) {
     SwipeDirection.RIGHT -> Offset(FLING_DISTANCE, current.y)
