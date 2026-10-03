@@ -541,14 +541,6 @@ private fun SwipeCardSlot(
     val thresholdPx = with(density) { SWIPE_THRESHOLD_DP.dp.toPx() }
     val cardWidthPx = with(density) { cardWidth.toPx() }
     val cardHeightPx = with(density) { cardHeight.toPx() }
-    // Rounded, not the Float cardWidthPx/cardHeightPx above — SwipeCard needs an exact Int to
-    // build its cache keys and image-request sizes with, and roundToPx (not toPx().toInt()) is
-    // what it used to compute internally from its own BoxWithConstraints, so keys stay byte-for-
-    // byte identical to before this moved up a level.
-    val (cardWidthRoundedPx, cardHeightRoundedPx) = remember(cardWidth, cardHeight, density) {
-        with(density) { cardWidth.roundToPx().coerceAtLeast(1) } to
-            with(density) { cardHeight.roundToPx().coerceAtLeast(1) }
-    }
 
     // Fires once per commit — role has already become Exiting with a non-null exitDirection/
     // exitOffset by the time this runs (CardStack sets all three together). Uses exitOffset — the
@@ -587,8 +579,6 @@ private fun SwipeCardSlot(
 
     SwipeCard(
         group = group,
-        widthPx = cardWidthRoundedPx,
-        heightPx = cardHeightRoundedPx,
         isZoomed = isZoomed,
         // Drawn on Warm/Behind too, not only Top — see the CardStack doc on why the border needs
         // to already be there before a card is ever promoted.
