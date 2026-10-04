@@ -514,6 +514,12 @@ private val ZOOM_PAN_SPRING = spring<Offset>(
 
 private const val APPEAR_FADE_MS = 220
 
+// How far the zoomed photo moves per unit of finger movement while a zoom is held. 1f would be
+// the photo following the finger exactly, which at MAX_PEEK_ZOOM means sweeping across the card
+// shows only 1/MAX_PEEK_ZOOM of it; (MAX_PEEK_ZOOM - 1) makes a sweep across the card width cover
+// the whole pannable range. Raise it for a faster pan, lower for finer control.
+private const val ZOOM_PAN_GAIN = MAX_PEEK_ZOOM - 1f
+
 private val ROTATE_SETTLE_SPRING = spring<Float>(
     dampingRatio = Spring.DampingRatioNoBouncy,
     stiffness = Spring.StiffnessMediumLow,
@@ -613,6 +619,9 @@ private fun SwipeCardSlot(
     val flingOffset = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
     val scale = remember(group.key) { Animatable(1f) }
     val zoomPan = remember(group.key) { Animatable(Offset.Zero, Offset.VectorConverter) }
+    // Written straight from each pointer-move while a zoom is held (like dragOffset for a swipe);
+    // zoomPan only takes over for the spring back to center on release.
+    var zoomPanLive by remember(group.key) { mutableStateOf(Offset.Zero) }
     var zoomOrigin by remember(group.key) { mutableStateOf(TransformOrigin.Center) }
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
@@ -733,8 +742,8 @@ private fun SwipeCardSlot(
             .graphicsLayer {
                 transformOrigin = zoomOrigin
                 val renderOffset = dragOffset + flingOffset.value
-                translationX = renderOffset.x + zoomPan.value.x
-                translationY = renderOffset.y + zoomPan.value.y
+                translationX = renderOffset.x + zoomPan.value.x + zoomPanLive.x
+                translationY = renderOffset.y + zoomPan.value.y + zoomPanLive.y
                 val extraDeg = extraDegNow()
                 val turnFit = turnFitFor(extraDeg)
                 applySwipeStyle(
@@ -832,27 +841,20 @@ private fun SwipeCardSlot(
                             },
                             onZoomPan = { delta ->
                                 if (activeRole.value != CardRole.Top) return@detectSwipeOrLongPressZoom
-                                val maxPanX = cardWidthPx * (scale.value - 1f) / 2f
-                                val maxPanY = cardHeightPx * (scale.value - 1f) / 2f
-                                val newPan = zoomPan.value + delta
-                                // scope.launch is required here, not just an optimization detail:
-                                // this callback runs inside awaitEachGesture's restricted-suspension
-                                // coroutine (AwaitPointerEventScope), which the Kotlin compiler only
-                                // allows to call suspend functions on that same receiver type —
-                                // Animatable.snapTo is a suspend member of an unrelated type, so
-                                // calling it directly here is a compile error ("Restricted suspending
-                                // functions can only invoke member or extension suspending functions
-                                // on their restricted coroutine scope"), not just a style choice.
-                                // launch{} starts a genuinely separate coroutine to escape that
-                                // restriction, same as this code did before.
-                                scope.launch {
-                                    zoomPan.snapTo(
-                                        Offset(
-                                            newPan.x.coerceIn(-maxPanX, maxPanX),
-                                            newPan.y.coerceIn(-maxPanY, maxPanY),
-                                        ),
-                                    )
-                                }
+                                // Zoom scales about the pivot (where the finger pressed), which moves
+                                // every edge of the card away from it by (scale - 1) times its distance
+                                // — so that is exactly how far the card can be shifted back before an
+                                // edge would pull inside where it started. A pivot off to one side
+                                // therefore gets a lopsided range, not a symmetric one.
+                                val grow = (scale.value - 1f).coerceAtLeast(0f)
+                                val fx = zoomOrigin.pivotFractionX
+                                val fy = zoomOrigin.pivotFractionY
+                                val wanted = zoomPan.value + zoomPanLive + delta * ZOOM_PAN_GAIN
+                                val clamped = Offset(
+                                    wanted.x.coerceIn(-(1f - fx) * cardWidthPx * grow, fx * cardWidthPx * grow),
+                                    wanted.y.coerceIn(-(1f - fy) * cardHeightPx * grow, fy * cardHeightPx * grow),
+                                )
+                                zoomPanLive = clamped - zoomPan.value
                             },
                             onZoomEnd = {
                                 if (activeRole.value != CardRole.Top) return@detectSwipeOrLongPressZoom
@@ -864,7 +866,13 @@ private fun SwipeCardSlot(
                                 zoomOrigin = TransformOrigin.Center
                                 isZoomed = false
                                 scope.launch { scale.animateTo(1f, ZOOM_SPRING) }
-                                scope.launch { zoomPan.animateTo(Offset.Zero, ZOOM_PAN_SPRING) }
+                                scope.launch {
+                                    // Animatable takes the value before the live part is cleared, or
+                                    // one frame would draw the card back at center.
+                                    zoomPan.snapTo(zoomPan.value + zoomPanLive)
+                                    zoomPanLive = Offset.Zero
+                                    zoomPan.animateTo(Offset.Zero, ZOOM_PAN_SPRING)
+                                }
                             },
                             onRotate = { deltaDeg ->
                                 if (activeRole.value != CardRole.Top || group.cover.isVideo) {
