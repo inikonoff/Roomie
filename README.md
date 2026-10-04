@@ -102,3 +102,21 @@ Once this builds in a real environment, exercise at minimum:
 - Deliberately no `MANAGE_EXTERNAL_STORAGE` ("All files access"): Google Play only allows it for
   apps whose core function needs it, and a folder-cleanup nicety isn't one. The old
   "delete empty folders" option that needed it was removed.
+
+## Releasing to Google Play
+
+Release builds are signed with a Play **upload key** taken from the environment; without it they
+fall back to the debug key, which Play rejects.
+
+1. Create the upload key once and keep the file and passwords somewhere safe:
+   `keytool -genkeypair -v -keystore cullect-upload.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000`
+2. Add repository secrets (Settings → Secrets and variables → Actions):
+   `CULLECT_KEYSTORE_BASE64` (`base64 -w0 cullect-upload.jks`), `CULLECT_KEYSTORE_PASSWORD`,
+   `CULLECT_KEY_ALIAS` (`upload` above), `CULLECT_KEY_PASSWORD`.
+3. Every push to `main` then builds `cullect-release-aab` — the bundle to upload — and a release APK
+   signed with the same key. `versionCode` is the CI run number, so each build is uploadable.
+4. On the first upload, opt in to **Play App Signing**: Google holds the real app-signing key, so a
+   lost upload key can be reset through Play support.
+
+Switching release builds from the debug key to the upload key changes their signature: an install
+signed with the old key has to be uninstalled once before a new one will go on.

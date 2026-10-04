@@ -4,6 +4,11 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// The Google Play *upload* key, supplied by the environment (CI secrets, or a developer's shell) and
+// never committed. When it isn't there — a plain local build, a fork's pull request — release builds
+// fall back to the debug key below, which Play refuses, so such a build can't be published by accident.
+val uploadKeystoreFile: String? = System.getenv("CULLECT_KEYSTORE_FILE")
+
 android {
     namespace = "com.cullect.app"
     compileSdk = 35
@@ -12,8 +17,11 @@ android {
         applicationId = "com.cullect.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0-mvp"
+        // Play rejects an upload whose versionCode isn't higher than every earlier one. CI's run
+        // number only ever goes up, so every pipeline build is uploadable without bookkeeping;
+        // local builds stay at 1.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionName = "1.0.0"
     }
 
     signingConfigs {
@@ -28,16 +36,24 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        if (uploadKeystoreFile != null) {
+            create("release") {
+                storeFile = file(uploadKeystoreFile)
+                storePassword = System.getenv("CULLECT_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("CULLECT_KEY_ALIAS")
+                keyPassword = System.getenv("CULLECT_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Debug-signed on purpose — this release build type exists only so framestats
-            // measurements run on a release-optimized binary (no debuggable overhead), not to
-            // produce a Play Store artifact. See the debug signingConfig's own comment above.
-            signingConfig = signingConfigs.getByName("debug")
+            // Upload key when the environment provides it (see uploadKeystoreFile); otherwise the
+            // debug key, which keeps a keyless build — and the on-device framestats runs that use a
+            // release-optimized binary — working, but is rejected by Play.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
