@@ -46,8 +46,8 @@ import com.roomie.app.ui.strings.LocalAppStrings
 import java.util.concurrent.TimeUnit
 
 /** Long-press zoom never asks for more than this times the on-screen card. A 50 MP original is
- *  ~200 MB of decoded heap and nothing on screen can show it. */
-internal const val MAX_PEEK_ZOOM = 2.5f
+ *  ~200 MB of decoded heap and nothing on screen can show it. (3x a 1080x1440 card is ~56 MB.) */
+internal const val MAX_PEEK_ZOOM = 3.0f
 
 /** Screen-sized decode key. CardStack's prefetch of stack[2] must write this same string. */
 internal fun screenCacheKey(uri: Uri, widthPx: Int, heightPx: Int): String =
@@ -129,10 +129,12 @@ fun SwipeCard(
             )
             if (isZoomed && !group.cover.isVideo) {
                 SubcomposeAsyncImage(
+                    // No Precision.EXACT here, unlike the screen request above: EXACT upscales a
+                    // source smaller than the target, and at 3x that would allocate a huge bitmap
+                    // for a small image with nothing to show for it.
                     model = ImageRequest.Builder(context)
                         .data(group.cover.uri)
                         .size(zoomWidthPx, zoomHeightPx)
-                        .precision(Precision.EXACT)
                         .allowHardware(false)
                         .memoryCacheKey(zoomKey)
                         .placeholderMemoryCacheKey(screenKey)
