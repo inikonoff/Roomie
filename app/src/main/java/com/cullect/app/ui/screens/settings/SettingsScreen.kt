@@ -93,7 +93,6 @@ import kotlin.math.roundToInt
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
-    onOpenLogs: () -> Unit,
 ) {
     val settings by viewModel.settings.collectAsState()
     val folders by viewModel.folders.collectAsState()
@@ -203,8 +202,6 @@ fun SettingsScreen(
                     value = formatBytes(thumbnailCacheBytes),
                     modifier = Modifier.clickable { viewModel.clearThumbnailCache(context) },
                 )
-
-                NavigationRow(label = strings.viewLogs, onClick = onOpenLogs)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -235,13 +232,8 @@ fun SettingsScreen(
                     enabled = settings.stackBrightnessEnabled,
                     onChanged = viewModel::setStackBrightnessLevel,
                 )
-            }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // TODO: временный блок для подбора радиуса/обводки, убрать после решения
-            SettingsCard {
-                SectionTitle(strings.tempCardTuningSection)
+                SubsectionTitle(strings.sectionCardShape)
                 StepperRow(
                     label = strings.cardCornerRadius,
                     value = "${settings.cardCornerRadiusDp}",
@@ -270,6 +262,7 @@ fun SettingsScreen(
                         )
                     },
                 )
+            }
             }
         }
     }
@@ -503,16 +496,19 @@ private fun CardAnimationStyleSelector(
  *  detail nobody adjusting a slider needs to see. */
 @Composable
 private fun EdgePaddingSlider(strings: AppStrings, currentDp: Int, onChanged: (Int) -> Unit) {
+    var dragging by remember(currentDp) { mutableStateOf(currentDp.toFloat()) }
     Column(modifier = Modifier.padding(top = 12.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(strings.edgePadding, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Text("$currentDp", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+            Text("${dragging.roundToInt()}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
         }
+        // Continuous (no tick marks, like the brightness slider): the value is rounded to whole dp
+        // only for display and when it's saved on release.
         Slider(
-            value = currentDp.toFloat(),
-            onValueChange = { onChanged(it.roundToInt()) },
+            value = dragging,
+            onValueChange = { dragging = it },
+            onValueChangeFinished = { onChanged(dragging.roundToInt()) },
             valueRange = CullectSettings.MIN_EDGE_PADDING_DP.toFloat()..CullectSettings.MAX_EDGE_PADDING_DP.toFloat(),
-            steps = CullectSettings.MAX_EDGE_PADDING_DP - CullectSettings.MIN_EDGE_PADDING_DP - 1,
         )
     }
 }
@@ -542,9 +538,8 @@ private fun StackBrightnessSlider(strings: AppStrings, level: Float, enabled: Bo
     }
 }
 
-/** Temporary — see `strings.tempCardTuningSection`'s own TODO. A stepper rather than a slider:
- *  both ranges are small (8-40, 0-4) and a slider's fine-drag precision isn't worth the extra
- *  gesture surface while these are still being tuned by feel. */
+/** A stepper rather than a slider: both ranges are small (8-40, 0-4), so a tap per step is more
+ *  precise than dragging. */
 @Composable
 private fun StepperRow(label: String, value: String, onDecrement: () -> Unit, onIncrement: () -> Unit) {
     Row(
@@ -564,22 +559,6 @@ private fun StepperRow(label: String, value: String, onDecrement: () -> Unit, on
         IconButton(onClick = onIncrement) {
             Icon(Icons.Filled.Add, contentDescription = null)
         }
-    }
-}
-
-/** A tappable label-only row that navigates elsewhere (e.g. to the Logs screen) — like
- *  [LabelValueRow] but without a value, just a chevron. */
-@Composable
-private fun NavigationRow(label: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        ChevronIcon()
     }
 }
 

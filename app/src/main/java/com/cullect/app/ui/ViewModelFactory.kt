@@ -6,7 +6,6 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.cullect.app.AppContainer
 import com.cullect.app.ui.screens.foldergrid.FolderGridViewModel
 import com.cullect.app.ui.screens.folders.FolderListViewModel
-import com.cullect.app.ui.screens.logs.LogsViewModel
 import com.cullect.app.ui.screens.settings.SettingsViewModel
 import com.cullect.app.ui.screens.swipe.SwipeSessionViewModel
 import com.cullect.app.ui.screens.trash.TrashFolderViewModel
@@ -36,7 +35,6 @@ class ViewModelFactory(private val container: AppContainer) : ViewModelProvider.
         TrashFolderViewModel::class.java ->
             TrashFolderViewModel(container.trashRepository) as T
 
-        LogsViewModel::class.java -> LogsViewModel() as T
 
         else -> throw IllegalArgumentException("Unknown ViewModel class: $modelClass")
     }

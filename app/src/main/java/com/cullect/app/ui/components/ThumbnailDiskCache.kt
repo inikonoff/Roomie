@@ -2,8 +2,6 @@ package com.cullect.app.ui.components
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.util.Log
-import com.cullect.app.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -11,8 +9,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
-
-private const val LOG_TAG = "ThumbCache"
 
 /**
  * Disk cache of already-decoded, already-downsized thumbnail bitmaps, keyed by a hash of
@@ -52,20 +48,6 @@ object ThumbnailDiskCache {
         runCatching {
             file.outputStream().use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out) }
         }
-        if (BuildConfig.DEBUG) {
-            Log.d(LOG_TAG, "write file=${file.name} size=${file.length()}b")
-        }
-    }
-
-    /** Temporary — see today's TZ. Logs a hit (cache file already on disk, no decode of the
-     *  original needed) or a miss (falling through to a real decode) for the first tiles shown
-     *  after a cold start, to verify hits actually happen instead of guessing from user reports. */
-    fun logHit(key: String, file: File) {
-        if (BuildConfig.DEBUG) Log.d(LOG_TAG, "hit=true key=$key file=${file.name} size=${file.length()}b")
-    }
-
-    fun logMiss(key: String) {
-        if (BuildConfig.DEBUG) Log.d(LOG_TAG, "hit=false key=$key (decoding source)")
     }
 
     fun sizeBytes(context: Context): Long {

@@ -80,8 +80,7 @@ interface AppStrings {
     val stackBrightness: String
     val stackBrightnessHint: String
     val stackBrightnessLevel: String
-    // Temporary — see the Settings screen's own "temporary" block.
-    val tempCardTuningSection: String
+    val sectionCardShape: String
     val cardCornerRadius: String
     val cardBorderWidth: String
     val sectionSwipeGestures: String
@@ -108,7 +107,6 @@ interface AppStrings {
     val clearThumbnailCache: String
     val enableSwipeLimit: String
     val unlockedLimitDisabled: String
-    val viewLogs: String
     val refreshLogs: String
     val shareLogs: String
     val clearLogs: String
@@ -205,7 +203,7 @@ object EnglishStrings : AppStrings {
     override val stackBrightness = "Brightness while swiping"
     override val stackBrightnessHint = "Only while going through photos; the rest of the app follows the system brightness."
     override val stackBrightnessLevel = "Level"
-    override val tempCardTuningSection = "Temporary — card corner/border tuning"
+    override val sectionCardShape = "Card shape"
     override val cardCornerRadius = "Corner radius"
     override val cardBorderWidth = "Border width"
     override val sectionSwipeGestures = "Swipe gestures"
@@ -232,7 +230,6 @@ object EnglishStrings : AppStrings {
     override val clearThumbnailCache = "Clear thumbnail cache"
     override val enableSwipeLimit = "Enable swipe limit & monetization"
     override val unlockedLimitDisabled = "Unlocked — limit disabled"
-    override val viewLogs = "Logs"
     override val refreshLogs = "Refresh"
     override val shareLogs = "Share"
     override val clearLogs = "Clear"
@@ -325,7 +322,7 @@ object RussianStrings : AppStrings {
     override val stackBrightness = "Яркость при просмотре"
     override val stackBrightnessHint = "Только пока листаете фото; в остальном приложении — системная яркость."
     override val stackBrightnessLevel = "Уровень"
-    override val tempCardTuningSection = "Временно — подбор радиуса/обводки карточки"
+    override val sectionCardShape = "Форма карточки"
     override val cardCornerRadius = "Радиус угла"
     override val cardBorderWidth = "Толщина обводки"
     override val sectionSwipeGestures = "Жесты свайпа"
@@ -354,7 +351,6 @@ object RussianStrings : AppStrings {
     override val clearThumbnailCache = "Очистить кэш превью"
     override val enableSwipeLimit = "Включить лимит свайпов и монетизацию"
     override val unlockedLimitDisabled = "Разблокировано — лимит отключён"
-    override val viewLogs = "Логи"
     override val refreshLogs = "Обновить"
     override val shareLogs = "Поделиться"
     override val clearLogs = "Очистить"

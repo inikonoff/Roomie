@@ -26,8 +26,6 @@ import com.cullect.app.ui.screens.foldergrid.FolderGridViewModel
 import com.cullect.app.ui.screens.folders.FolderListScreen
 import com.cullect.app.ui.screens.folders.FolderListViewModel
 import com.cullect.app.ui.screens.limit.SwipeLimitScreen
-import com.cullect.app.ui.screens.logs.LogsScreen
-import com.cullect.app.ui.screens.logs.LogsViewModel
 import com.cullect.app.ui.screens.settings.SettingsScreen
 import com.cullect.app.ui.screens.settings.SettingsViewModel
 import com.cullect.app.ui.screens.summary.SummaryScreen
@@ -46,7 +44,6 @@ private object Routes {
     const val SUMMARY = "summary"
     const val SWIPE_LIMIT = "swipe_limit"
     const val SETTINGS = "settings"
-    const val LOGS = "logs"
 
     /** Result passed back from the swipe screen to the folder grid it was opened from: the
      *  stableId of the photo the user was on when they left. */
@@ -225,15 +222,6 @@ fun CullectNavHost(viewModelFactory: ViewModelFactory) {
             val settingsViewModel: SettingsViewModel = viewModel(factory = viewModelFactory)
             SettingsScreen(
                 viewModel = settingsViewModel,
-                onBack = { navController.popBackStack() },
-                onOpenLogs = { navController.navigate(Routes.LOGS) },
-            )
-        }
-
-        composable(Routes.LOGS) {
-            val logsViewModel: LogsViewModel = viewModel(factory = viewModelFactory)
-            LogsScreen(
-                viewModel = logsViewModel,
                 onBack = { navController.popBackStack() },
             )
         }

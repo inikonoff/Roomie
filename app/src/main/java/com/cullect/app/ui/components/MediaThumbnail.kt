@@ -1,9 +1,12 @@
 package com.cullect.app.ui.components
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
+import android.provider.MediaStore
 import android.util.LruCache
 import android.util.Size
 import androidx.compose.foundation.Image
@@ -26,6 +29,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil3.BitmapImage
 import coil3.imageLoader
+import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
@@ -91,6 +95,31 @@ private val videoDecodeLimiter = Semaphore(3)
  *  already finished loading) is never gated, only *new* work is. */
 private const val SCROLL_STOP_DEBOUNCE_MS = 64L
 
+/**
+ * The disk-cache key needs the source's `DATE_MODIFIED`. Grid/folder tiles already know it, but
+ * the Trash folder only has the stored URI — passing 0 there keyed the same photo differently
+ * ("…|0" instead of "…|<timestamp>"), so every trashed photo was decoded and cached a second time.
+ * Looked up here, off the UI thread, only when the caller doesn't have it.
+ */
+private suspend fun resolveDateModified(context: Context, uri: Uri, known: Long): Long {
+    if (known != 0L) return known
+    return withContext(Dispatchers.IO) {
+        runCatching {
+            val projection = arrayOf(MediaStore.MediaColumns.DATE_MODIFIED)
+            val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // A trashed row is hidden from a plain query.
+                val args = Bundle().apply {
+                    putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_INCLUDE)
+                }
+                context.contentResolver.query(uri, projection, args, null)
+            } else {
+                context.contentResolver.query(uri, projection, null, null, null)
+            }
+            cursor?.use { if (it.moveToFirst()) it.getLong(0) else 0L }
+        }.getOrNull() ?: 0L
+    }
+}
+
 /** Gates new thumbnail work behind "not actively scrolling" — see [SCROLL_STOP_DEBOUNCE_MS]. */
 @Composable
 fun rememberAllowThumbnailDecode(isScrollInProgress: Boolean): Boolean {
@@ -152,12 +181,11 @@ fun MediaThumbnail(
             // stale frame forever. The disk read is itself a real BitmapFactory.decodeFile (not
             // just a cheap file stat), unbounded by the decoder's own concurrency limit — wait for
             // scrolling to actually stop before starting it, same as the real decode below.
-            val cacheKey = "video|$key|$VIDEO_THUMBNAIL_PX|$dateModified"
             snapshotFlow { allowDecodeState.value }.first { it }
+            val cacheKey = "video|$key|$VIDEO_THUMBNAIL_PX|${resolveDateModified(context, uri, dateModified)}"
             val fromDisk = withContext(Dispatchers.IO) {
                 val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
                 if (cacheFile.exists()) {
-                    ThumbnailDiskCache.logHit(cacheKey, cacheFile)
                     BitmapFactory.decodeFile(cacheFile.path)
                 } else {
                     null
@@ -171,7 +199,6 @@ fun MediaThumbnail(
             // A real frame-extraction decode is real work — wait for scrolling to actually stop
             // before starting one, without cancelling/restarting this coroutine while we wait.
             snapshotFlow { allowDecodeState.value }.first { it }
-            ThumbnailDiskCache.logMiss(cacheKey)
             value = withContext(Dispatchers.IO) {
                 val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
                 videoDecodeLimiter.withPermit {
@@ -201,7 +228,7 @@ fun MediaThumbnail(
         val key = "$uri|$GRID_THUMBNAIL_PX"
         val bitmap by produceState(photoThumbnailCache.get(key), uri, dateModified) {
             if (value != null) return@produceState
-            val cacheKey = "$key|$dateModified"
+            val cacheKey = "$key|${resolveDateModified(context, uri, dateModified)}"
             // The disk read is itself a real BitmapFactory.decodeFile (not just a cheap file
             // stat), unbounded by the decoder's own concurrency limit — wait for scrolling to
             // actually stop before starting it, same as the real decode below.
@@ -209,7 +236,6 @@ fun MediaThumbnail(
             val fromDisk = withContext(Dispatchers.IO) {
                 val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
                 if (cacheFile.exists()) {
-                    ThumbnailDiskCache.logHit(cacheKey, cacheFile)
                     BitmapFactory.decodeFile(cacheFile.path)
                 } else {
                     null
@@ -224,7 +250,6 @@ fun MediaThumbnail(
             // for scrolling to actually stop before starting it, without cancelling/restarting
             // this coroutine while we wait.
             snapshotFlow { allowDecodeState.value }.first { it }
-            ThumbnailDiskCache.logMiss(cacheKey)
             value = withContext(Dispatchers.IO) {
                 val cacheFile = ThumbnailDiskCache.fileFor(context, cacheKey)
                 val request = ImageRequest.Builder(context)
@@ -237,6 +262,10 @@ fun MediaThumbnail(
                     // AHardwareBuffers sized exactly like these thumbnails). Software ARGB_8888 is
                     // cheaper for this pattern.
                     .allowHardware(false)
+                    // The bitmap is kept in photoThumbnailCache and on disk already; letting Coil
+                    // hold a second copy in its own memory cache would only duplicate it (and push
+                    // out the full-size swipe-stack images that cache is actually for).
+                    .memoryCachePolicy(CachePolicy.DISABLED)
                     .build()
                 val result = context.imageLoader.execute(request) as? SuccessResult
                 (result?.image as? BitmapImage)?.bitmap?.also { bmp ->

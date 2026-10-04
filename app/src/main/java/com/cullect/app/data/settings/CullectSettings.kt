@@ -22,9 +22,7 @@ data class CullectSettings(
     /** Padding around the swipe screen's card stack. A plain number, not a unit toggle — shown in
      *  Settings as just "24", not "24dp". */
     val edgePaddingDp: Int = 24,
-    /** Temporary — see the Settings screen's own "temporary" block. Corner radius and border width
-     *  of the swipe stack's top card, being tuned live rather than guessed; remove both once a
-     *  value is settled on and hardcode it instead. */
+    /** Corner radius and border width of the swipe stack's cards. */
     val cardCornerRadiusDp: Int = 32,
     val cardBorderWidthDp: Float = 1f,
     /** Overrides the window brightness only while the swipe stack is on screen; everywhere else the

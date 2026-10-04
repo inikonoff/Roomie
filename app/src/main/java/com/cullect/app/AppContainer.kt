@@ -15,26 +15,10 @@ import com.cullect.app.data.trash.TrashRepository
 class AppContainer(context: Context) {
     private val appContext = context.applicationContext
 
-    init {
-        CrashReporter.mark(appContext, "AppContainer:before CullectDatabase.getInstance()")
-    }
+    private val database = CullectDatabase.getInstance(appContext)
 
-    private val database = CullectDatabase.getInstance(appContext).also {
-        CrashReporter.mark(appContext, "AppContainer:after CullectDatabase.getInstance()")
-    }
-
-    val mediaRepository = MediaRepository(appContext).also {
-        CrashReporter.mark(appContext, "AppContainer:after MediaRepository")
-    }
-    val settingsRepository = SettingsRepository(appContext).also {
-        CrashReporter.mark(appContext, "AppContainer:after SettingsRepository")
-    }
-    val trashRepository = TrashRepository(appContext, database.trashDao()).also {
-        CrashReporter.mark(appContext, "AppContainer:after TrashRepository")
-    }
+    val mediaRepository = MediaRepository(appContext)
+    val settingsRepository = SettingsRepository(appContext)
+    val trashRepository = TrashRepository(appContext, database.trashDao())
     val monetizationGateway: MonetizationGateway = NoOpMonetizationGateway()
-
-    init {
-        CrashReporter.mark(appContext, "AppContainer:done")
-    }
 }

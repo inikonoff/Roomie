@@ -7,7 +7,6 @@ import android.content.IntentSender
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
-import com.cullect.app.CrashReporter
 import com.cullect.app.data.db.TrashDao
 import com.cullect.app.data.db.TrashEntry
 import com.cullect.app.data.media.MediaGroup
@@ -161,7 +160,6 @@ class TrashRepository(
         for ((index, entry) in entries.withIndex()) {
             trashDao.deleteByIds(listOf(entry.stableId))
             freedBytes += entry.sizeBytes
-            CrashReporter.mark(context, "trash_delete:confirmed[$index/${entries.size}]:room_cleaned:${entry.stableId}")
             onProgress(index + 1, entries.size)
         }
         if (entries.isNotEmpty()) _permanentlyRemovedStableIds.tryEmit(entries.map { it.stableId }.toSet())
@@ -185,13 +183,11 @@ class TrashRepository(
      */
     suspend fun buildDeleteRequest(entries: List<TrashEntry>): Pair<List<TrashEntry>, IntentSender?> =
         withContext(Dispatchers.IO) {
-            CrashReporter.mark(context, "trash_delete:build_request:count=${entries.size}")
             if (entries.isEmpty() || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
                 return@withContext entries to null
             }
 
             val (valid, stale) = entries.partition { entry -> uriExists(Uri.parse(entry.uri)) }
-            CrashReporter.mark(context, "trash_delete:filtered:valid=${valid.size}:stale=${stale.size}")
             if (stale.isNotEmpty()) {
                 trashDao.deleteByIds(stale.map { it.stableId })
                 _permanentlyRemovedStableIds.tryEmit(stale.map { it.stableId }.toSet())
@@ -200,11 +196,8 @@ class TrashRepository(
 
             val sender = try {
                 val uris = valid.map { Uri.parse(it.uri) }
-                val intentSender = MediaStore.createDeleteRequest(resolver, uris).intentSender
-                CrashReporter.mark(context, "trash_delete:request_built")
-                intentSender
-            } catch (e: Exception) {
-                CrashReporter.mark(context, "trash_delete:create_request_failed:${e::class.simpleName}")
+                MediaStore.createDeleteRequest(resolver, uris).intentSender
+            } catch (_: Exception) {
                 null
             }
             valid to sender
@@ -225,8 +218,7 @@ class TrashRepository(
         var freedBytes = 0L
         val deletedIds = mutableSetOf<String>()
 
-        for ((index, entry) in entries.withIndex()) {
-            CrashReporter.mark(context, "trash_delete:entry[$index/${entries.size}]:start:${entry.stableId}")
+        for (entry in entries) {
             val deleted = try {
                 resolver.delete(Uri.parse(entry.uri), null, null) > 0
             } catch (_: RecoverableSecurityException) {
@@ -235,7 +227,6 @@ class TrashRepository(
             } catch (_: SecurityException) {
                 false
             }
-            CrashReporter.mark(context, "trash_delete:entry[$index/${entries.size}]:done:deleted=$deleted")
             if (deleted) {
                 freedBytes += entry.sizeBytes
                 deletedIds += entry.stableId

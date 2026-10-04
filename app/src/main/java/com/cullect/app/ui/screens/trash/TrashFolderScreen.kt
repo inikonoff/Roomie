@@ -49,7 +49,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.cullect.app.CrashReporter
 import com.cullect.app.data.db.TrashEntry
 import com.cullect.app.ui.components.MediaThumbnail
 import com.cullect.app.ui.components.rememberAllowThumbnailDecode
@@ -99,9 +98,6 @@ fun TrashFolderScreen(
     val deleteLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult(),
     ) { result ->
-        // Temporary diagnostic checkpoint — see TrashRepository for why (a crash CrashReporter's
-        // uncaught-exception handler never sees, so this file survives it instead).
-        CrashReporter.mark(context, "trash_delete:launcher_result:code=${result.resultCode}")
         val request = pendingDelete
         pendingDelete = null
         if (request != null && result.resultCode == Activity.RESULT_OK) {
