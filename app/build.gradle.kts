@@ -48,7 +48,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Upload key when the environment provides it (see uploadKeystoreFile); otherwise the
             // debug key, which keeps a keyless build — and the on-device framestats runs that use a
