@@ -11,12 +11,12 @@ val uploadKeystoreFile: String? = System.getenv("CULLECT_KEYSTORE_FILE")
 
 android {
     namespace = "com.cullect.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.cullect.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         // Play rejects an upload whose versionCode isn't higher than every earlier one. CI's run
         // number only ever goes up, so every pipeline build is uploadable without bookkeeping;
         // local builds stay at 1.
