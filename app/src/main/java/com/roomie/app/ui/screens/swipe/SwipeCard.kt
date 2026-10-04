@@ -78,6 +78,8 @@ fun SwipeCard(
      *  swelling with the card and snapping back when the turn commits. Read in the draw phase only,
      *  so it costs nothing unless it actually changes. */
     layerScale: () -> Float = { 1f },
+    /** Called when the screen-sized image has loaded (including straight from the memory cache). */
+    onImageReady: () -> Unit = {},
 ) {
     val strings = LocalAppStrings.current
     var isPlayingVideo by remember(group.key) { mutableStateOf(false) }
@@ -188,7 +190,10 @@ fun SwipeCard(
                 contentDescription = group.cover.displayName,
                 contentScale = ContentScale.Fit,
                 filterQuality = FilterQuality.High,
-                onSuccess = { lastShownKey[0] = screenKey },
+                onSuccess = {
+                    lastShownKey[0] = screenKey
+                    onImageReady()
+                },
                 modifier = imageModifier,
             )
             if (isZoomed && !group.cover.isVideo) {

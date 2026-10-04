@@ -3,6 +3,7 @@ package com.roomie.app.ui.screens.swipe
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.TweenSpec
 import androidx.compose.animation.core.VectorConverter
@@ -511,6 +512,8 @@ private val ZOOM_PAN_SPRING = spring<Offset>(
     stiffness = Spring.StiffnessMedium,
 )
 
+private const val APPEAR_FADE_MS = 220
+
 private val ROTATE_SETTLE_SPRING = spring<Float>(
     dampingRatio = Spring.DampingRatioNoBouncy,
     stiffness = Spring.StiffnessMediumLow,
@@ -562,8 +565,9 @@ private fun flingTarget(direction: SwipeDirection, current: Offset, window: Size
 /**
  * One instance per photo for its whole life in the stack (see the [CardStack] doc for why that
  * matters). [role] switches what's drawn/interactive without ever recreating this composable:
- * - [CardRole.Warm]: composed (so its border exists ahead of time — see [CardStack]) but fully
- *   transparent and non-interactive; not actually visible in the stack yet. The only role
+ * - [CardRole.Warm]: composed (so its border exists ahead of time — see [CardStack]) and
+ *   non-interactive. Invisible until its image has loaded, then fades in — so a card of another
+ *   shape (a portrait one behind two wide ones) doesn't pop into the stack bare. The only role
  *   `pointerInput` isn't attached for — a Warm card is never mid-interaction when promoted, so
  *   there's nothing to hand off.
  * - [CardRole.Behind]: visible, static, but `pointerInput` is already attached (inert — see
@@ -654,6 +658,21 @@ private fun SwipeCardSlot(
         return 1f + (turnedScale - 1f) * sinTurn * sinTurn
     }
 
+    // Entrance. Behind/Warm cards stay invisible until their image has loaded, then fade in; Top and
+    // Exiting are always shown (a card the user is already holding can't wait on a decode). Driven
+    // from the image-ready signal, not from the role change, so for a card that finished loading in
+    // the background the fade is long over by the time a swipe promotes it — nothing starts on the
+    // release frame. (Before this the Warm card's own alpha = 0 was overwritten by applySwipeStyle's
+    // alpha, so it was always fully visible and simply popped in.)
+    var imageReady by remember(group.key) { mutableStateOf(false) }
+    val appear = remember(group.key) {
+        Animatable(if (role == CardRole.Top || role == CardRole.Exiting) 1f else 0f)
+    }
+    val shouldShow = imageReady || role == CardRole.Top || role == CardRole.Exiting
+    LaunchedEffect(shouldShow) {
+        if (shouldShow) appear.animateTo(1f, tween(APPEAR_FADE_MS, easing = LinearOutSlowInEasing))
+    }
+
     val configuration = LocalConfiguration.current
     val windowSize = rememberUpdatedState(
         Size(
@@ -708,12 +727,10 @@ private fun SwipeCardSlot(
         borderWidthDp = cardBorderWidthDp,
         quarterTurns = quarterTurns,
         layerScale = { turnFitFor(extraDegNow()) },
+        onImageReady = { imageReady = true },
         modifier = Modifier
             .size(cardWidth, cardHeight)
             .graphicsLayer {
-                // Composed (for its border and decode) but not actually part of the visible stack
-                // yet — see CardRole.Warm.
-                if (role == CardRole.Warm) alpha = 0f
                 transformOrigin = zoomOrigin
                 val renderOffset = dragOffset + flingOffset.value
                 translationX = renderOffset.x + zoomPan.value.x
@@ -727,6 +744,7 @@ private fun SwipeCardSlot(
                     baseScale = scale.value * turnFit,
                     extraRotationDeg = extraDeg,
                 )
+                alpha *= appear.value
             }
             .then(
                 if (role == CardRole.Warm) {
