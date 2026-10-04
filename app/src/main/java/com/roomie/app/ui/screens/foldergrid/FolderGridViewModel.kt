@@ -53,7 +53,10 @@ class FolderGridViewModel(
             loadedKey = key
             loadedTrashedIds = currentTrashedIds
             val savedPeriod = settingsRepository.getFolderPeriodFilter(bucketId)
-            loadWithPeriod(bucketId, savedPeriod, currentTrashedIds)
+            // Coming back to a grid that already has content (e.g. from the swipe screen after some
+            // deletions): swap the list in place instead of tearing the grid down to a spinner,
+            // which threw away its scroll position and put the user back at the top.
+            loadWithPeriod(bucketId, savedPeriod, currentTrashedIds, showSpinner = _uiState.value.groups.isEmpty())
         }
     }
 
@@ -65,8 +68,13 @@ class FolderGridViewModel(
         }
     }
 
-    private suspend fun loadWithPeriod(bucketId: Long?, period: PeriodFilter, trashedIds: Set<String>) {
-        _uiState.update { it.copy(isLoading = true, period = period) }
+    private suspend fun loadWithPeriod(
+        bucketId: Long?,
+        period: PeriodFilter,
+        trashedIds: Set<String>,
+        showSpinner: Boolean = true,
+    ) {
+        _uiState.update { it.copy(isLoading = showSpinner || it.isLoading, period = period) }
         val sortOrder = settingsRepository.settings.first().sortOrder
         // A swipe-deleted photo stays on disk until the trash is emptied, so it must be
         // excluded here too or it would still show up when browsing the folder grid.

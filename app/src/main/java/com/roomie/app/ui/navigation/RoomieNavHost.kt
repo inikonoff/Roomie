@@ -1,6 +1,7 @@
 package com.roomie.app.ui.navigation
 
 import android.app.Activity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -46,6 +47,10 @@ private object Routes {
     const val SWIPE_LIMIT = "swipe_limit"
     const val SETTINGS = "settings"
     const val LOGS = "logs"
+
+    /** Result passed back from the swipe screen to the folder grid it was opened from: the
+     *  stableId of the photo the user was on when they left. */
+    const val SCROLL_TO_KEY = "scroll_to_stable_id"
 
     const val ALL_PHOTOS_SENTINEL = "all"
     const val NO_START_SENTINEL = "start"
@@ -121,10 +126,15 @@ fun RoomieNavHost(viewModelFactory: ViewModelFactory) {
             val displayName = URLDecoder.decode(args.getString("displayName") ?: "", "UTF-8")
 
             val folderGridViewModel: FolderGridViewModel = viewModel(factory = viewModelFactory)
+            val scrollToStableId by backStackEntry.savedStateHandle
+                .getStateFlow<String?>(Routes.SCROLL_TO_KEY, null)
+                .collectAsState()
             FolderGridScreen(
                 viewModel = folderGridViewModel,
                 bucketId = bucketId,
                 displayName = displayName,
+                scrollToStableId = scrollToStableId,
+                onScrolledToTarget = { backStackEntry.savedStateHandle.set<String?>(Routes.SCROLL_TO_KEY, null) },
                 onOpenSwipe = { startAtStableId ->
                     // Read live from the ViewModel's own state, not a captured route argument —
                     // the period can change while browsing this folder's grid, and the swipe
@@ -163,15 +173,24 @@ fun RoomieNavHost(viewModelFactory: ViewModelFactory) {
                 ?.takeIf { it != Routes.NO_START_SENTINEL }
                 ?.let { URLDecoder.decode(it, "UTF-8") }
 
+            // Every swipe-delete already committed to the trash the instant it happened (see
+            // SwipeSessionViewModel.swipe) — there is nothing left to confirm or commit here. What
+            // is handed back is where the user was, so the grid lands on that photo instead of the
+            // top of the folder. Covers the system back gesture/button too, not just the arrow.
+            val leaveStack = {
+                swipeSessionViewModel.currentStableId()?.let { stableId ->
+                    navController.previousBackStackEntry?.savedStateHandle?.set(Routes.SCROLL_TO_KEY, stableId)
+                }
+                navController.popBackStack()
+            }
+            BackHandler(onBack = { leaveStack() })
             SwipeSessionEntry(
                 viewModel = swipeSessionViewModel,
                 bucketId = bucketId,
                 displayName = displayName,
                 period = period,
                 startAtStableId = startAtStableId,
-                // Every swipe-delete already committed to the trash the instant it happened (see
-                // SwipeSessionViewModel.swipe) — there is nothing left to confirm or commit here.
-                onBack = { navController.popBackStack() },
+                onBack = { leaveStack() },
                 onStackExhausted = {
                     swipeSessionViewModel.prepareSessionSummary()
                     navController.navigate(Routes.SUMMARY) { popUpTo(Routes.FOLDERS) }

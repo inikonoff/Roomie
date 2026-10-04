@@ -2,6 +2,7 @@ package com.roomie.app.ui.screens.foldergrid
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +47,7 @@ import com.roomie.app.ui.components.MediaThumbnail
 import com.roomie.app.ui.components.rememberAllowThumbnailDecode
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
+import kotlinx.coroutines.flow.first
 
 /**
  * The full contents of a folder, seen before committing to a swipe session — tapping a photo
@@ -58,6 +61,9 @@ fun FolderGridScreen(
     displayName: String,
     onOpenSwipe: (startAtStableId: String) -> Unit,
     onBack: () -> Unit,
+    /** The photo the user was on when they left the swipe stack; the grid scrolls to it once. */
+    scrollToStableId: String? = null,
+    onScrolledToTarget: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val strings = LocalAppStrings.current
@@ -104,6 +110,29 @@ fun FolderGridScreen(
                 else -> {
                     val gridState = rememberLazyGridState()
                     val allowDecode = rememberAllowThumbnailDecode(gridState.isScrollInProgress)
+                    // Lives in this branch so it only runs once there is a grid to scroll. If the
+                    // photo's row is already fully on screen the grid stays put; otherwise it's
+                    // brought to the middle of the screen, with context above and below.
+                    LaunchedEffect(scrollToStableId) {
+                        val target = scrollToStableId ?: return@LaunchedEffect
+                        val index = uiState.groups.indexOfFirst { it.cover.stableId == target }
+                        if (index >= 0) {
+                            snapshotFlow { gridState.layoutInfo.visibleItemsInfo.isNotEmpty() }.first { it }
+                            val info = gridState.layoutInfo
+                            val item = info.visibleItemsInfo.firstOrNull { it.index == index }
+                            val fullyVisible = item != null && item.offset.y >= 0 &&
+                                item.offset.y + item.size.height <= info.viewportSize.height
+                            if (!fullyVisible) {
+                                gridState.scrollToItem(index)
+                                val row = gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+                                if (row != null) {
+                                    val middle = (gridState.layoutInfo.viewportSize.height - row.size.height) / 2f
+                                    gridState.scrollBy(row.offset.y - middle)
+                                }
+                            }
+                        }
+                        onScrolledToTarget()
+                    }
                     LazyVerticalGrid(
                         state = gridState,
                         columns = GridCells.Fixed(3),

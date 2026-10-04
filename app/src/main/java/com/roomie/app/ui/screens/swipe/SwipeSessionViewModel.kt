@@ -265,6 +265,10 @@ class SwipeSessionViewModel(
         }
     }
 
+    /** The photo currently on top of the stack — where the folder grid should land when the user
+     *  leaves the stack, so they come back to what they were just looking at. */
+    fun currentStableId(): String? = _uiState.value.stack.firstOrNull()?.cover?.stableId
+
     fun setQuarterTurns(key: String, turns: Int) {
         _uiState.update { it.copy(quarterTurnsByKey = it.quarterTurnsByKey + (key to turns)) }
     }
