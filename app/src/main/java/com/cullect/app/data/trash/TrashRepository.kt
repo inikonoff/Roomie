@@ -64,7 +64,7 @@ class TrashRepository(
         if (entries.isEmpty()) return@withContext
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply { put(MediaStore.MediaColumns.IS_TRASHED, 0) }
-            for (entry in entries) {
+            for ((index, entry) in entries.withIndex()) {
                 try {
                     resolver.update(Uri.parse(entry.uri), values, null, null)
                 } catch (_: RecoverableSecurityException) {
@@ -218,7 +218,7 @@ class TrashRepository(
         var freedBytes = 0L
         val deletedIds = mutableSetOf<String>()
 
-        for (entry in entries) {
+        for ((index, entry) in entries.withIndex()) {
             val deleted = try {
                 resolver.delete(Uri.parse(entry.uri), null, null) > 0
             } catch (_: RecoverableSecurityException) {
