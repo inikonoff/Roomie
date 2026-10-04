@@ -63,6 +63,10 @@ data class SwipeUiState(
     /** [MediaGroup.key] -> how many 90-degree turns the user gave that photo this session. Lives
      *  only here: never written anywhere, and cleared when a new folder session loads. */
     val quarterTurnsByKey: Map<String, Int> = emptyMap(),
+    /** [MediaGroup.key] -> width/height of the photo as it actually decoded, for the few photos
+     *  whose MediaStore dimensions disagreed with the real picture (see [setMeasuredAspectRatio]).
+     *  Session-only, cleared with the folder. */
+    val measuredAspectRatioByKey: Map<String, Float> = emptyMap(),
     /** Size of the whole folder this session started from (including anything already skipped
      *  past via "start at this photo"), for the "12 of 345" position counter. */
     val totalCount: Int = 0,
@@ -229,6 +233,7 @@ class SwipeSessionViewModel(
                     folderName = displayName,
                     isStackExhausted = false,
                     quarterTurnsByKey = emptyMap(),
+                    measuredAspectRatioByKey = emptyMap(),
                 )
             }
             undoHistory.clear()
@@ -271,6 +276,14 @@ class SwipeSessionViewModel(
 
     fun setQuarterTurns(key: String, turns: Int) {
         _uiState.update { it.copy(quarterTurnsByKey = it.quarterTurnsByKey + (key to turns)) }
+    }
+
+    /** MediaStore's WIDTH/HEIGHT/ORIENTATION are not reliable on every device (sometimes the pair is
+     *  already rotated and ORIENTATION swaps it again), which sizes the card for the wrong shape and
+     *  leaves wide empty bands around the picture. The decoded bitmap is the truth, so the card
+     *  re-fits to it once the image has loaded. */
+    fun setMeasuredAspectRatio(key: String, ratio: Float) {
+        _uiState.update { it.copy(measuredAspectRatioByKey = it.measuredAspectRatioByKey + (key to ratio)) }
     }
 
     private fun actionFor(direction: SwipeDirection): SwipeCardAction = when (direction) {

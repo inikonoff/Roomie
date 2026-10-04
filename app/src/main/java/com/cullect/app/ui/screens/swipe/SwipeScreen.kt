@@ -223,7 +223,9 @@ fun SwipeScreen(
                         cardCornerRadiusDp = uiState.cardCornerRadiusDp,
                         cardBorderWidthDp = uiState.cardBorderWidthDp,
                         quarterTurnsByKey = uiState.quarterTurnsByKey,
+                        measuredAspectRatioByKey = uiState.measuredAspectRatioByKey,
                         onRotated = viewModel::setQuarterTurns,
+                        onMeasuredAspectRatio = viewModel::setMeasuredAspectRatio,
                         onSwiped = viewModel::swipe,
                     )
                 }
@@ -347,6 +349,9 @@ private enum class CardRole { Warm, Behind, Top, Exiting }
 /** Fits a card of [ratio] (width/height) inside a [maxWidth] x [maxHeight] box, like
  *  [androidx.compose.ui.layout.ContentScale.Fit] but sizing the composable itself rather than
  *  its content — so differently-oriented photos each get their own natural size on screen. */
+/** How far a decoded picture's shape may differ from the card's before the card is re-fitted. */
+private const val ASPECT_MISMATCH_TOLERANCE = 0.04f
+
 private fun fitSize(ratio: Float, maxWidth: Dp, maxHeight: Dp): Pair<Dp, Dp> {
     val containerRatio = maxWidth / maxHeight
     return if (containerRatio > ratio) (maxHeight * ratio) to maxHeight else maxWidth to (maxWidth / ratio)
@@ -376,7 +381,9 @@ private fun CardStack(
     cardCornerRadiusDp: Int,
     cardBorderWidthDp: Float,
     quarterTurnsByKey: Map<String, Int>,
+    measuredAspectRatioByKey: Map<String, Float>,
     onRotated: (key: String, turns: Int) -> Unit,
+    onMeasuredAspectRatio: (key: String, ratio: Float) -> Unit,
     onSwiped: (SwipeDirection) -> Boolean,
 ) {
     var exiting by remember { mutableStateOf<ExitingCardState?>(null) }
@@ -420,7 +427,7 @@ private fun CardStack(
                 // instead of leaving it letterboxed in its old frame. The other shape's width is
                 // passed too so the slot can scale smoothly between the two while it turns.
                 val turns = quarterTurnsByKey[group.key] ?: 0
-                val ratio = group.cover.aspectRatio
+                val ratio = measuredAspectRatioByKey[group.key] ?: group.cover.aspectRatio
                 val sideways = Math.floorMod(turns, 4) % 2 == 1
                 val (w, h) = fitSize(if (sideways) 1f / ratio else ratio, maxWidth, maxHeight)
                 val (otherW, _) = fitSize(if (sideways) ratio else 1f / ratio, maxWidth, maxHeight)
@@ -432,6 +439,12 @@ private fun CardStack(
                     otherShapeCardWidth = otherW,
                     quarterTurns = turns,
                     onRotationCommitted = { onRotated(group.key, it) },
+                    onImageRatio = { measured ->
+                        // Only a real mismatch (not rounding from the decode size) re-fits the card.
+                        if (kotlin.math.abs(measured - ratio) / ratio > ASPECT_MISMATCH_TOLERANCE) {
+                            onMeasuredAspectRatio(group.key, measured)
+                        }
+                    },
                     animationStyle = animationStyle,
                     cardCornerRadiusDp = cardCornerRadiusDp,
                     cardBorderWidthDp = cardBorderWidthDp,
@@ -604,6 +617,7 @@ private fun SwipeCardSlot(
     otherShapeCardWidth: Dp,
     quarterTurns: Int,
     onRotationCommitted: (turns: Int) -> Unit,
+    onImageRatio: (Float) -> Unit,
     animationStyle: CardAnimationStyle,
     cardCornerRadiusDp: Int,
     cardBorderWidthDp: Float,
@@ -740,6 +754,7 @@ private fun SwipeCardSlot(
         quarterTurns = quarterTurns,
         layerScale = { turnFitFor(extraDegNow()) },
         onImageReady = { imageReady = true },
+        onImageRatio = onImageRatio,
         modifier = Modifier
             .size(cardWidth, cardHeight)
             .graphicsLayer {

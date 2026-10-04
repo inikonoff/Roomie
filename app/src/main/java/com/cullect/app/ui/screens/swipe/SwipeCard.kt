@@ -80,6 +80,9 @@ fun SwipeCard(
     layerScale: () -> Float = { 1f },
     /** Called when the screen-sized image has loaded (including straight from the memory cache). */
     onImageReady: () -> Unit = {},
+    /** The decoded picture's real width/height, reported with every load so the caller can correct
+     *  a card frame sized from wrong MediaStore dimensions. */
+    onImageRatio: (Float) -> Unit = {},
 ) {
     val strings = LocalAppStrings.current
     var isPlayingVideo by remember(group.key) { mutableStateOf(false) }
@@ -190,8 +193,12 @@ fun SwipeCard(
                 contentDescription = group.cover.displayName,
                 contentScale = ContentScale.Fit,
                 filterQuality = FilterQuality.High,
-                onSuccess = {
+                onSuccess = { success ->
                     lastShownKey[0] = screenKey
+                    val image = success.result.image
+                    if (image.width > 0 && image.height > 0) {
+                        onImageRatio(image.width.toFloat() / image.height.toFloat())
+                    }
                     onImageReady()
                 },
                 modifier = imageModifier,
