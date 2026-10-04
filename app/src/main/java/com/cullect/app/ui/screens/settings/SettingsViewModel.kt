@@ -66,10 +66,6 @@ class SettingsViewModel(
         viewModelScope.launch { settingsRepository.setTrashRetentionDays(days) }
     }
 
-    fun setAutoDeleteEmptyFolders(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.setAutoDeleteEmptyFolders(enabled) }
-    }
-
     fun setMonetizationEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.setMonetizationEnabled(enabled) }
     }

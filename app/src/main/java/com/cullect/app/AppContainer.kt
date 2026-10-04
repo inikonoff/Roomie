@@ -2,7 +2,6 @@ package com.cullect.app
 
 import android.content.Context
 import com.cullect.app.data.db.CullectDatabase
-import com.cullect.app.data.media.EmptyFolderCleaner
 import com.cullect.app.data.media.MediaRepository
 import com.cullect.app.data.monetization.MonetizationGateway
 import com.cullect.app.data.monetization.NoOpMonetizationGateway
@@ -33,7 +32,6 @@ class AppContainer(context: Context) {
     val trashRepository = TrashRepository(appContext, database.trashDao()).also {
         CrashReporter.mark(appContext, "AppContainer:after TrashRepository")
     }
-    val emptyFolderCleaner = EmptyFolderCleaner()
     val monetizationGateway: MonetizationGateway = NoOpMonetizationGateway()
 
     init {

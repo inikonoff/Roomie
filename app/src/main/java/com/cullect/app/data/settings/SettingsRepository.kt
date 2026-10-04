@@ -25,7 +25,6 @@ class SettingsRepository(private val context: Context) {
     private object Keys {
         val SORT_ORDER = stringPreferencesKey("sort_order")
         val TRASH_RETENTION_DAYS = intPreferencesKey("trash_retention_days")
-        val AUTO_DELETE_EMPTY_FOLDERS = booleanPreferencesKey("auto_delete_empty_folders")
         val SESSION_SWIPE_COUNT = intPreferencesKey("session_swipe_count")
         val MONETIZATION_ENABLED = booleanPreferencesKey("monetization_enabled")
         val FREE_SWIPE_LIMIT = intPreferencesKey("free_swipe_limit")
@@ -51,7 +50,6 @@ class SettingsRepository(private val context: Context) {
         CullectSettings(
             sortOrder = prefs[Keys.SORT_ORDER]?.let { SortOrder.valueOf(it) } ?: defaults.sortOrder,
             trashRetentionDays = prefs[Keys.TRASH_RETENTION_DAYS] ?: defaults.trashRetentionDays,
-            autoDeleteEmptyFolders = prefs[Keys.AUTO_DELETE_EMPTY_FOLDERS] ?: defaults.autoDeleteEmptyFolders,
             sessionSwipeCount = prefs[Keys.SESSION_SWIPE_COUNT] ?: defaults.sessionSwipeCount,
             monetizationEnabled = prefs[Keys.MONETIZATION_ENABLED] ?: defaults.monetizationEnabled,
             freeSwipeLimit = prefs[Keys.FREE_SWIPE_LIMIT] ?: defaults.freeSwipeLimit,
@@ -85,10 +83,6 @@ class SettingsRepository(private val context: Context) {
     suspend fun setTrashRetentionDays(days: Int) {
         require(days in CullectSettings.ALLOWED_RETENTION_DAYS)
         context.dataStore.edit { it[Keys.TRASH_RETENTION_DAYS] = days }
-    }
-
-    suspend fun setAutoDeleteEmptyFolders(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.AUTO_DELETE_EMPTY_FOLDERS] = enabled }
     }
 
     suspend fun setMonetizationEnabled(enabled: Boolean) {

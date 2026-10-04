@@ -103,8 +103,6 @@ interface AppStrings {
     val chooseAFolder: String
     val noFoldersFoundYet: String
     val cancel: String
-    val autoDeleteEmptyFolders: String
-    val autoDeleteEmptyFoldersUnavailable: String
     val clearThumbnailCache: String
     val enableSwipeLimit: String
     val unlockedLimitDisabled: String
@@ -226,8 +224,6 @@ object EnglishStrings : AppStrings {
     override val chooseAFolder = "Choose a folder"
     override val noFoldersFoundYet = "No folders found yet."
     override val cancel = "Cancel"
-    override val autoDeleteEmptyFolders = "Delete empty folders automatically"
-    override val autoDeleteEmptyFoldersUnavailable = "Needs \"All files access\" on Android 11+ — currently has no effect"
     override val clearThumbnailCache = "Clear thumbnail cache"
     override val enableSwipeLimit = "Enable swipe limit & monetization"
     override val unlockedLimitDisabled = "Unlocked — limit disabled"
@@ -347,8 +343,6 @@ object RussianStrings : AppStrings {
     override val chooseAFolder = "Выберите папку"
     override val noFoldersFoundYet = "Папки пока не найдены."
     override val cancel = "Отмена"
-    override val autoDeleteEmptyFolders = "Удалять пустые папки автоматически"
-    override val autoDeleteEmptyFoldersUnavailable = "На Android 11+ нужен доступ «Все файлы» — сейчас ничего не делает"
     override val clearThumbnailCache = "Очистить кэш превью"
     override val enableSwipeLimit = "Включить лимит свайпов и монетизацию"
     override val unlockedLimitDisabled = "Разблокировано — лимит отключён"

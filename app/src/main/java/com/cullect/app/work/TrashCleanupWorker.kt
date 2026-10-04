@@ -10,14 +10,12 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.cullect.app.CullectApplication
-import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
 /**
- * Periodically purges trash entries whose retention window has passed, and — if the user opted
- * in — deletes folders left empty by that purge. Runs only when the device is idle and not on
- * low battery, per TZ section 8.4; there is no network constraint since the app never touches
- * the network for this work.
+ * Periodically purges trash entries whose retention window has passed. Runs only when the device
+ * is idle and not on low battery, per TZ section 8.4; there is no network constraint since the app
+ * never touches the network for this work.
  */
 class TrashCleanupWorker(
     context: Context,
@@ -28,11 +26,6 @@ class TrashCleanupWorker(
         val container = (applicationContext as CullectApplication).container
         return try {
             val cleanup = container.trashRepository.permanentlyDeleteExpired()
-
-            val settings = container.settingsRepository.settings.first()
-            if (settings.autoDeleteEmptyFolders && cleanup.affectedDirs.isNotEmpty()) {
-                container.emptyFolderCleaner.deleteEmptyFolders(cleanup.affectedDirs)
-            }
 
             Result.success(workDataOf(KEY_FREED_BYTES to cleanup.freedBytes))
         } catch (_: Throwable) {

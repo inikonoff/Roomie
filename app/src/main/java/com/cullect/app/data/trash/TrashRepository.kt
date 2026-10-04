@@ -7,7 +7,6 @@ import android.content.IntentSender
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
-import java.io.File
 import com.cullect.app.CrashReporter
 import com.cullect.app.data.db.TrashDao
 import com.cullect.app.data.db.TrashEntry
@@ -120,7 +119,7 @@ class TrashRepository(
     suspend fun permanentlyDeleteExpired(): CleanupResult = withContext(Dispatchers.IO) {
         val expired = trashDao.getExpired(System.currentTimeMillis())
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            CleanupResult(freedBytes = 0L, affectedDirs = emptySet())
+            CleanupResult(freedBytes = 0L)
         } else {
             deleteEntries(expired)
         }
@@ -159,16 +158,14 @@ class TrashRepository(
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): CleanupResult = withContext(Dispatchers.IO) {
         var freedBytes = 0L
-        val affectedDirs = mutableSetOf<File>()
         for ((index, entry) in entries.withIndex()) {
             trashDao.deleteByIds(listOf(entry.stableId))
             freedBytes += entry.sizeBytes
-            entry.filePath?.let { path -> File(path).parentFile?.let { affectedDirs += it } }
             CrashReporter.mark(context, "trash_delete:confirmed[$index/${entries.size}]:room_cleaned:${entry.stableId}")
             onProgress(index + 1, entries.size)
         }
         if (entries.isNotEmpty()) _permanentlyRemovedStableIds.tryEmit(entries.map { it.stableId }.toSet())
-        CleanupResult(freedBytes, affectedDirs)
+        CleanupResult(freedBytes)
     }
 
     /**
@@ -226,7 +223,6 @@ class TrashRepository(
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
     ): CleanupResult {
         var freedBytes = 0L
-        val affectedDirs = mutableSetOf<File>()
         val deletedIds = mutableSetOf<String>()
 
         for ((index, entry) in entries.withIndex()) {
@@ -249,14 +245,13 @@ class TrashRepository(
                 // viewModelScope coroutine) being torn down mid-delete, e.g. by leaving the screen
                 // or the process dying, instead of staying gone on disk but still listed in Room.
                 trashDao.deleteByIds(listOf(entry.stableId))
-                entry.filePath?.let { path -> File(path).parentFile?.let { affectedDirs += it } }
             }
             onProgress(index + 1, entries.size)
         }
 
         if (deletedIds.isNotEmpty()) _permanentlyRemovedStableIds.tryEmit(deletedIds)
-        return CleanupResult(freedBytes, affectedDirs)
+        return CleanupResult(freedBytes)
     }
 }
 
-data class CleanupResult(val freedBytes: Long, val affectedDirs: Set<File>)
+data class CleanupResult(val freedBytes: Long)

@@ -21,7 +21,7 @@ compiles, not that every gesture feels right.
 cullect/
   app/src/main/java/com/cullect/app/
     data/
-      media/       MediaStore access (MediaRepository), burst/video grouping, empty-folder cleanup
+      media/       MediaStore access (MediaRepository), burst/video grouping
       db/          Room: trash registry only
       settings/    DataStore-backed user settings, per-direction swipe actions, session swipe counter
       trash/       TrashRepository: system trash dialog, retention countdown
@@ -32,7 +32,7 @@ cullect/
       screens/trash      Pre-deletion review grid ("uncheck to keep")
       screens/summary    Post-deletion summary (count + freed space)
       screens/limit      Swipe-limit paywall (ad / one-time purchase stubs)
-      screens/settings   Sort order, retention days, auto-delete-empty-folders, monetization toggle
+      screens/settings   Sort order, retention days, monetization toggle
       navigation         Single-Activity NavHost wiring all of the above
       theme              Warm & Cozy color palette, shapes, spring constants
     work/          TrashCleanupWorker (WorkManager, device-idle + battery-not-low)
@@ -60,10 +60,6 @@ cullect/
   same folder taken within ~1.5s of each other collapse into one card; short videos are always their
   own single-item unit. See `BurstGrouping.kt` for the exact heuristic and how to plug in a real
   burst id if a target device happens to expose one.
-- **Empty-folder deletion only touches directories Cullect itself just vacated** (passed in
-  explicitly by the cleanup worker), and never removes a top-level media folder (DCIM, Pictures,
-  WhatsApp, ...) even if it's empty — those are here for other apps to write into. It requires
-  `MANAGE_EXTERNAL_STORAGE` and is a no-op without it.
 - **Ads/Billing are a `NoOpMonetizationGateway` stub.** The swipe limit, paywall screen, and
   settings toggle are fully wired; swap the gateway implementation for real AdMob/Play Billing
   calls without touching any caller. Monetization is off by default (`monetizationEnabled = false`
@@ -102,6 +98,7 @@ Once this builds in a real environment, exercise at minimum:
 
 - No real Ads SDK / Billing Library integration (by design for this MVP — see TZ section 11).
 - No automated tests yet (no test runner available in this sandbox to scaffold against).
-- `EmptyFolderCleaner` and the legacy (<API 30) trash path use `MediaStore.MediaColumns.DATA`,
-  which is deprecated and only returns real paths with All Files Access granted; without it, both
-  features degrade to no-ops rather than crashing.
+- The legacy (<API 30) trash path uses `MediaStore.MediaColumns.DATA`, which is deprecated.
+- Deliberately no `MANAGE_EXTERNAL_STORAGE` ("All files access"): Google Play only allows it for
+  apps whose core function needs it, and a folder-cleanup nicety isn't one. The old
+  "delete empty folders" option that needed it was removed.

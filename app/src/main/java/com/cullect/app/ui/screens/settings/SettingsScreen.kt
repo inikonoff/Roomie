@@ -1,6 +1,5 @@
 package com.cullect.app.ui.screens.settings
 
-import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -196,21 +195,6 @@ fun SettingsScreen(
                 SortOrderSelector(strings, settings.sortOrder, viewModel::setSortOrder)
 
                 RetentionSelector(strings, settings.trashRetentionDays, viewModel::setTrashRetentionDays)
-
-                SwitchRow(
-                    title = strings.autoDeleteEmptyFolders,
-                    // Scoped storage on Android 11+ gives no way to remove a folder Cullect doesn't
-                    // own without the separate, dangerous "All files access" permission, which this
-                    // app doesn't request — the toggle silently does nothing there. Honest about it
-                    // instead of pretending it works everywhere; still fully functional on 8–10.
-                    subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        strings.autoDeleteEmptyFoldersUnavailable
-                    } else {
-                        null
-                    },
-                    checked = settings.autoDeleteEmptyFolders,
-                    onCheckedChange = viewModel::setAutoDeleteEmptyFolders,
-                )
 
                 // No confirmation dialog: this only ever deletes re-derivable cache files, not user
                 // data, so the extra step that trash/delete flows need would just be friction here.

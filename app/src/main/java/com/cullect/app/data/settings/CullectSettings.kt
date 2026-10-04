@@ -5,7 +5,6 @@ import com.cullect.app.data.media.SortOrder
 data class CullectSettings(
     val sortOrder: SortOrder = SortOrder.NEWEST_FIRST,
     val trashRetentionDays: Int = 3,
-    val autoDeleteEmptyFolders: Boolean = true,
     val sessionSwipeCount: Int = 0,
     val monetizationEnabled: Boolean = false,
     val freeSwipeLimit: Int = 100,
