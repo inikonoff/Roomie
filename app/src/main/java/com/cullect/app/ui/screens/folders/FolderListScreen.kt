@@ -1,11 +1,14 @@
 package com.cullect.app.ui.screens.folders
 
 import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.provider.Settings as SystemSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -44,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,8 +55,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import android.net.Uri
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.cullect.app.util.findActivity
 import com.cullect.app.data.media.GalleryFolder
 import com.cullect.app.ui.components.MediaThumbnail
 import com.cullect.app.ui.components.rememberAllowThumbnailDecode
@@ -81,17 +91,44 @@ fun FolderListScreen(
         }
     }
 
+    fun hasAllPermissions() = requiredPermissions.all {
+        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+    }
+
+    // Once the system has stopped offering the dialog (denied twice, or "don't ask again"), asking
+    // again returns "denied" instantly without showing anything — a grant button that does nothing.
+    // Right after a denial, "no rationale to show" for a permission still missing means exactly that
+    // (before the first request it would also be false, but this is only evaluated after one).
+    var permissionBlocked by remember { mutableStateOf(false) }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { results ->
-        viewModel.onPermissionResult(results.values.all { it })
+        val granted = results.values.all { it }
+        val activity = context.findActivity()
+        permissionBlocked = !granted && activity != null && requiredPermissions.any {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED &&
+                !ActivityCompat.shouldShowRequestPermissionRationale(activity, it)
+        }
+        viewModel.onPermissionResult(granted)
+    }
+
+    // Coming back from the system settings screen (or any pause) with access now granted there.
+    val hasPermissionNow = rememberUpdatedState(uiState.hasMediaPermission)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && !hasPermissionNow.value && hasAllPermissions()) {
+                permissionBlocked = false
+                viewModel.onPermissionResult(true)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(Unit) {
-        val alreadyGranted = requiredPermissions.all {
-            androidx.core.content.ContextCompat.checkSelfPermission(context, it) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        }
+        val alreadyGranted = hasAllPermissions()
         if (alreadyGranted) {
             viewModel.onPermissionResult(true)
         } else {
@@ -130,7 +167,15 @@ fun FolderListScreen(
             !uiState.hasMediaPermission -> PermissionRationale(
                 strings = strings,
                 modifier = Modifier.padding(padding),
+                blocked = permissionBlocked,
                 onGrantClick = { permissionLauncher.launch(requiredPermissions) },
+                onOpenSettings = {
+                    context.startActivity(
+                        Intent(SystemSettings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                            .setData(Uri.fromParts("package", context.packageName, null))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                },
             )
 
             uiState.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -166,7 +211,13 @@ private fun CullectTopBar(strings: AppStrings, onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun PermissionRationale(strings: AppStrings, modifier: Modifier = Modifier, onGrantClick: () -> Unit) {
+private fun PermissionRationale(
+    strings: AppStrings,
+    modifier: Modifier = Modifier,
+    blocked: Boolean,
+    onGrantClick: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
     Column(
         modifier = modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
@@ -174,12 +225,12 @@ private fun PermissionRationale(strings: AppStrings, modifier: Modifier = Modifi
     ) {
         Icon(Icons.Filled.Photo, contentDescription = null, modifier = Modifier.padding(bottom = 16.dp))
         Text(
-            strings.permissionRationale,
+            if (blocked) strings.permissionBlockedHint else strings.permissionRationale,
             style = MaterialTheme.typography.bodyLarge,
         )
         Spacer(modifier = Modifier.padding(top = 16.dp))
-        Button(onClick = onGrantClick) {
-            Text(strings.grantAccess)
+        Button(onClick = if (blocked) onOpenSettings else onGrantClick) {
+            Text(if (blocked) strings.openAppSettings else strings.grantAccess)
         }
     }
 }

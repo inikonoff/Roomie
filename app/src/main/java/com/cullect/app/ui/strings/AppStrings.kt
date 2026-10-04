@@ -24,6 +24,8 @@ interface AppStrings {
     // Folder list
     val permissionRationale: String
     val grantAccess: String
+    val permissionBlockedHint: String
+    val openAppSettings: String
     val allPhotos: String
     val trash: String
     val empty: String
@@ -150,6 +152,9 @@ object EnglishStrings : AppStrings {
     override val permissionRationale =
         "Cullect needs access to your photos and videos to help you clean up your gallery."
     override val grantAccess = "Grant access"
+    override val permissionBlockedHint =
+        "Access to photos and videos is turned off. Allow it in the app's system settings to continue."
+    override val openAppSettings = "Open settings"
     override val allPhotos = "All photos"
     override val trash = "Trash"
     override val empty = "Empty"
@@ -267,6 +272,9 @@ object RussianStrings : AppStrings {
     override val permissionRationale =
         "Cullect нужен доступ к фото и видео, чтобы помочь навести порядок в галерее."
     override val grantAccess = "Предоставить доступ"
+    override val permissionBlockedHint =
+        "Доступ к фото и видео отключён. Разрешите его в системных настройках приложения, чтобы продолжить."
+    override val openAppSettings = "Открыть настройки"
     override val allPhotos = "Все фото"
     override val trash = "Корзина"
     override val empty = "Пусто"

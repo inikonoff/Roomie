@@ -1,12 +1,10 @@
 package com.cullect.app.ui.components
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
 import android.view.WindowManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
+import com.cullect.app.util.findActivity
 
 /**
  * Overrides this window's brightness for as long as the caller stays in the composition, and hands
@@ -30,10 +28,4 @@ fun WindowBrightnessOverride(enabled: Boolean, level: Float) {
             }
         }
     }
-}
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
 }
