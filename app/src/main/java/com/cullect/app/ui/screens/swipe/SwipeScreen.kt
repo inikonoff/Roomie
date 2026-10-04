@@ -159,7 +159,7 @@ fun SwipeScreen(
                 actions = {
                     // End padding keeps a 2-3 digit badge (it hangs off the icon's top-right corner)
                     // from being clipped by the screen edge.
-                    IconButton(onClick = onOpenTrash, modifier = Modifier.padding(end = 12.dp)) {
+                    IconButton(onClick = onOpenTrash, modifier = Modifier.padding(end = 20.dp)) {
                         if (uiState.trashedCount > 0) {
                             BadgedBox(badge = { Badge { Text(uiState.trashedCount.toString()) } }) {
                                 Icon(Icons.Filled.Delete, contentDescription = strings.reviewTrash)
