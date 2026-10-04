@@ -118,6 +118,14 @@ class SettingsViewModel(
         viewModelScope.launch { settingsRepository.setCardBorderWidthDp(value) }
     }
 
+    fun setStackBrightnessEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setStackBrightnessEnabled(enabled) }
+    }
+
+    fun setStackBrightnessLevel(value: Float) {
+        viewModelScope.launch { settingsRepository.setStackBrightnessLevel(value) }
+    }
+
     /** Tapping the already-active preset is a no-op — nothing to change, and writing anyway is
      *  exactly what used to silently reset any up/down customization on a redundant tap. Otherwise,
      *  only left/right ever change here: up/down are freely editable on their own (see the always-

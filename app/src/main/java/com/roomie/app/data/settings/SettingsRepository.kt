@@ -42,6 +42,8 @@ class SettingsRepository(private val context: Context) {
         val EDGE_PADDING_DP = intPreferencesKey("edge_padding_dp")
         val CARD_CORNER_RADIUS_DP = intPreferencesKey("card_corner_radius_dp")
         val CARD_BORDER_WIDTH_DP = floatPreferencesKey("card_border_width_dp")
+        val STACK_BRIGHTNESS_ENABLED = booleanPreferencesKey("stack_brightness_enabled")
+        val STACK_BRIGHTNESS_LEVEL = floatPreferencesKey("stack_brightness_level")
     }
 
     val settings: Flow<RoomieSettings> = context.dataStore.data.map { prefs ->
@@ -71,6 +73,8 @@ class SettingsRepository(private val context: Context) {
             edgePaddingDp = prefs[Keys.EDGE_PADDING_DP] ?: defaults.edgePaddingDp,
             cardCornerRadiusDp = prefs[Keys.CARD_CORNER_RADIUS_DP] ?: defaults.cardCornerRadiusDp,
             cardBorderWidthDp = prefs[Keys.CARD_BORDER_WIDTH_DP] ?: defaults.cardBorderWidthDp,
+            stackBrightnessEnabled = prefs[Keys.STACK_BRIGHTNESS_ENABLED] ?: defaults.stackBrightnessEnabled,
+            stackBrightnessLevel = prefs[Keys.STACK_BRIGHTNESS_LEVEL] ?: defaults.stackBrightnessLevel,
         )
     }
 
@@ -182,6 +186,15 @@ class SettingsRepository(private val context: Context) {
     suspend fun setCardBorderWidthDp(value: Float) {
         require(value in RoomieSettings.MIN_CARD_BORDER_WIDTH_DP..RoomieSettings.MAX_CARD_BORDER_WIDTH_DP)
         context.dataStore.edit { it[Keys.CARD_BORDER_WIDTH_DP] = value }
+    }
+
+    suspend fun setStackBrightnessEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.STACK_BRIGHTNESS_ENABLED] = enabled }
+    }
+
+    suspend fun setStackBrightnessLevel(value: Float) {
+        require(value in RoomieSettings.MIN_STACK_BRIGHTNESS..RoomieSettings.MAX_STACK_BRIGHTNESS)
+        context.dataStore.edit { it[Keys.STACK_BRIGHTNESS_LEVEL] = value }
     }
 
     /** One saved period filter per folder (keyed by bucketId; `null` is the "All photos" bucket) —

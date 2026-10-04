@@ -58,6 +58,8 @@ data class SwipeUiState(
     val edgePaddingDp: Int = 24,
     val cardCornerRadiusDp: Int = 32,
     val cardBorderWidthDp: Float = 1f,
+    val stackBrightnessEnabled: Boolean = false,
+    val stackBrightnessLevel: Float = 1f,
     /** Size of the whole folder this session started from (including anything already skipped
      *  past via "start at this photo"), for the "12 of 345" position counter. */
     val totalCount: Int = 0,
@@ -169,6 +171,8 @@ class SwipeSessionViewModel(
                         edgePaddingDp = settings.edgePaddingDp,
                         cardCornerRadiusDp = settings.cardCornerRadiusDp,
                         cardBorderWidthDp = settings.cardBorderWidthDp,
+                        stackBrightnessEnabled = settings.stackBrightnessEnabled,
+                        stackBrightnessLevel = settings.stackBrightnessLevel,
                         monetizationEnabled = settings.monetizationEnabled,
                         gesturePreset = SwipeGesturePreset.matching(settings),
                     )

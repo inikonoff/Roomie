@@ -75,6 +75,9 @@ interface AppStrings {
     val animationFade: String
     val animationShrink: String
     val edgePadding: String
+    val stackBrightness: String
+    val stackBrightnessHint: String
+    val stackBrightnessLevel: String
     // Temporary — see the Settings screen's own "temporary" block.
     val tempCardTuningSection: String
     val cardCornerRadius: String
@@ -196,6 +199,9 @@ object EnglishStrings : AppStrings {
     override val animationFade = "Fade"
     override val animationShrink = "Shrink"
     override val edgePadding = "Padding"
+    override val stackBrightness = "Brightness while swiping"
+    override val stackBrightnessHint = "Only while going through photos; the rest of the app follows the system brightness."
+    override val stackBrightnessLevel = "Level"
     override val tempCardTuningSection = "Temporary — card corner/border tuning"
     override val cardCornerRadius = "Corner radius"
     override val cardBorderWidth = "Border width"
@@ -312,6 +318,9 @@ object RussianStrings : AppStrings {
     override val animationFade = "Затухание"
     override val animationShrink = "Сжатие"
     override val edgePadding = "Отступ"
+    override val stackBrightness = "Яркость при просмотре"
+    override val stackBrightnessHint = "Только пока листаете фото; в остальном приложении — системная яркость."
+    override val stackBrightnessLevel = "Уровень"
     override val tempCardTuningSection = "Временно — подбор радиуса/обводки карточки"
     override val cardCornerRadius = "Радиус угла"
     override val cardBorderWidth = "Толщина обводки"

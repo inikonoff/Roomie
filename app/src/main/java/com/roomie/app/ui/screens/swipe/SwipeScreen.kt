@@ -76,6 +76,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.roomie.app.data.media.MediaGroup
 import com.roomie.app.data.settings.CardAnimationStyle
+import com.roomie.app.ui.components.WindowBrightnessOverride
 import com.roomie.app.ui.screens.settings.label
 import com.roomie.app.ui.strings.AppStrings
 import com.roomie.app.ui.strings.LocalAppStrings
@@ -103,6 +104,9 @@ fun SwipeScreen(
     val strings = LocalAppStrings.current
     val haptic = LocalHapticFeedback.current
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Only this screen: the override is dropped as soon as it leaves the composition.
+    WindowBrightnessOverride(uiState.stackBrightnessEnabled, uiState.stackBrightnessLevel)
 
     LaunchedEffect(uiState.hasReachedLimit) {
         if (uiState.hasReachedLimit) onLimitReached()

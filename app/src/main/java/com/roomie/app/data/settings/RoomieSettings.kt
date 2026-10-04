@@ -28,6 +28,11 @@ data class RoomieSettings(
      *  value is settled on and hardcode it instead. */
     val cardCornerRadiusDp: Int = 32,
     val cardBorderWidthDp: Float = 1f,
+    /** Overrides the window brightness only while the swipe stack is on screen; everywhere else the
+     *  app follows the system. [stackBrightnessLevel] is 0..1 of the screen's range, so it can be
+     *  above the current system level (useful outdoors). */
+    val stackBrightnessEnabled: Boolean = false,
+    val stackBrightnessLevel: Float = 1f,
 ) {
     val hasReachedSwipeLimit: Boolean
         get() = monetizationEnabled && !isPremiumUnlocked && sessionSwipeCount >= freeSwipeLimit
@@ -40,5 +45,8 @@ data class RoomieSettings(
         const val MAX_CARD_CORNER_RADIUS_DP = 40
         const val MIN_CARD_BORDER_WIDTH_DP = 0f
         const val MAX_CARD_BORDER_WIDTH_DP = 4f
+        /** Not 0: some panels read that as "backlight off". */
+        const val MIN_STACK_BRIGHTNESS = 0.1f
+        const val MAX_STACK_BRIGHTNESS = 1f
     }
 }

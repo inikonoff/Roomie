@@ -238,6 +238,19 @@ fun SettingsScreen(
                 CardAnimationStyleSelector(strings, settings.cardAnimationStyle, viewModel::setCardAnimationStyle)
 
                 EdgePaddingSlider(strings, settings.edgePaddingDp, viewModel::setEdgePaddingDp)
+
+                SwitchRow(
+                    title = strings.stackBrightness,
+                    subtitle = strings.stackBrightnessHint,
+                    checked = settings.stackBrightnessEnabled,
+                    onCheckedChange = viewModel::setStackBrightnessEnabled,
+                )
+                StackBrightnessSlider(
+                    strings = strings,
+                    level = settings.stackBrightnessLevel,
+                    enabled = settings.stackBrightnessEnabled,
+                    onChanged = viewModel::setStackBrightnessLevel,
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -516,6 +529,31 @@ private fun EdgePaddingSlider(strings: AppStrings, currentDp: Int, onChanged: (I
             onValueChange = { onChanged(it.roundToInt()) },
             valueRange = RoomieSettings.MIN_EDGE_PADDING_DP.toFloat()..RoomieSettings.MAX_EDGE_PADDING_DP.toFloat(),
             steps = RoomieSettings.MAX_EDGE_PADDING_DP - RoomieSettings.MIN_EDGE_PADDING_DP - 1,
+        )
+    }
+}
+
+/** Held in local state while dragging and written once on release: unlike the padding slider this
+ *  is continuous, and a DataStore write per pixel of drag is pointless — nothing on this screen
+ *  changes brightness anyway, it only applies later in the swipe stack. */
+@Composable
+private fun StackBrightnessSlider(strings: AppStrings, level: Float, enabled: Boolean, onChanged: (Float) -> Unit) {
+    var dragging by remember(level) { mutableStateOf(level) }
+    Column(modifier = Modifier.padding(top = 8.dp).alpha(if (enabled) 1f else 0.4f)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(strings.stackBrightnessLevel, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(
+                "${(dragging * 100).roundToInt()}%",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+        }
+        Slider(
+            value = dragging,
+            onValueChange = { dragging = it },
+            onValueChangeFinished = { onChanged(dragging) },
+            enabled = enabled,
+            valueRange = RoomieSettings.MIN_STACK_BRIGHTNESS..RoomieSettings.MAX_STACK_BRIGHTNESS,
         )
     }
 }
