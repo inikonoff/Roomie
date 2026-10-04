@@ -514,11 +514,12 @@ private val ZOOM_PAN_SPRING = spring<Offset>(
 
 private const val APPEAR_FADE_MS = 220
 
-// How far the zoomed photo moves per unit of finger movement while a zoom is held. 1f would be
-// the photo following the finger exactly, which at MAX_PEEK_ZOOM means sweeping across the card
-// shows only 1/MAX_PEEK_ZOOM of it; (MAX_PEEK_ZOOM - 1) makes a sweep across the card width cover
-// the whole pannable range. Raise it for a faster pan, lower for finer control.
-private const val ZOOM_PAN_GAIN = MAX_PEEK_ZOOM - 1f
+// How far the finger has to travel, as a fraction of the screen along an axis, to sweep the whole
+// zoomed photo across that axis. The pan speed is derived from it (see onZoomPan) rather than being
+// a fixed multiplier, so a big zoom or a wide photo automatically moves faster: the photo runs
+// ahead of the finger, in the same direction. Lower = faster (0.5 = half a screen of finger
+// movement covers the entire photo); 1f would need a full edge-to-edge sweep.
+private const val ZOOM_PAN_SWEEP_FRACTION = 0.5f
 
 private val ROTATE_SETTLE_SPRING = spring<Float>(
     dampingRatio = Spring.DampingRatioNoBouncy,
@@ -849,7 +850,17 @@ private fun SwipeCardSlot(
                                 val grow = (scale.value - 1f).coerceAtLeast(0f)
                                 val fx = zoomOrigin.pivotFractionX
                                 val fy = zoomOrigin.pivotFractionY
-                                val wanted = zoomPan.value + zoomPanLive + delta * ZOOM_PAN_GAIN
+                                // Photo travel available per axis is cardSize * grow; dividing by the
+                                // finger travel allotted to cover it gives the speed-up. One gain for
+                                // both axes (the larger need) so the photo still moves in exactly the
+                                // finger's direction; the other axis just reaches its limit sooner.
+                                val window = windowSize.value
+                                val gain = maxOf(
+                                    1f,
+                                    cardWidthPx * grow / (window.width * ZOOM_PAN_SWEEP_FRACTION),
+                                    cardHeightPx * grow / (window.height * ZOOM_PAN_SWEEP_FRACTION),
+                                )
+                                val wanted = zoomPan.value + zoomPanLive + delta * gain
                                 val clamped = Offset(
                                     wanted.x.coerceIn(-(1f - fx) * cardWidthPx * grow, fx * cardWidthPx * grow),
                                     wanted.y.coerceIn(-(1f - fy) * cardHeightPx * grow, fy * cardHeightPx * grow),
