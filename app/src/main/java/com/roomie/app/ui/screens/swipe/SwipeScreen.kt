@@ -11,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateRotation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -48,6 +49,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -85,9 +88,11 @@ import com.roomie.app.ui.theme.SwipePostpone
 import com.roomie.app.ui.theme.SwipeRightKeep
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 private const val SWIPE_THRESHOLD_DP = 120f
 
@@ -214,6 +219,8 @@ fun SwipeScreen(
                         animationStyle = uiState.cardAnimationStyle,
                         cardCornerRadiusDp = uiState.cardCornerRadiusDp,
                         cardBorderWidthDp = uiState.cardBorderWidthDp,
+                        quarterTurnsByKey = uiState.quarterTurnsByKey,
+                        onRotated = viewModel::setQuarterTurns,
                         onSwiped = viewModel::swipe,
                     )
                 }
@@ -365,6 +372,8 @@ private fun CardStack(
     animationStyle: CardAnimationStyle,
     cardCornerRadiusDp: Int,
     cardBorderWidthDp: Float,
+    quarterTurnsByKey: Map<String, Int>,
+    onRotated: (key: String, turns: Int) -> Unit,
     onSwiped: (SwipeDirection) -> Boolean,
 ) {
     var exiting by remember { mutableStateOf<ExitingCardState?>(null) }
@@ -404,12 +413,22 @@ private fun CardStack(
 
         for ((group, role) in slots) {
             key(group.key) {
-                val (w, h) = fitSize(group.cover.aspectRatio, maxWidth, maxHeight)
+                // A sideways turn re-fits the card to the photo's swapped shape (portrait <-> wide)
+                // instead of leaving it letterboxed in its old frame. The other shape's width is
+                // passed too so the slot can scale smoothly between the two while it turns.
+                val turns = quarterTurnsByKey[group.key] ?: 0
+                val ratio = group.cover.aspectRatio
+                val sideways = Math.floorMod(turns, 4) % 2 == 1
+                val (w, h) = fitSize(if (sideways) 1f / ratio else ratio, maxWidth, maxHeight)
+                val (otherW, _) = fitSize(if (sideways) ratio else 1f / ratio, maxWidth, maxHeight)
                 SwipeCardSlot(
                     group = group,
                     role = role,
                     cardWidth = w,
                     cardHeight = h,
+                    otherShapeCardWidth = otherW,
+                    quarterTurns = turns,
+                    onRotationCommitted = { onRotated(group.key, it) },
                     animationStyle = animationStyle,
                     cardCornerRadiusDp = cardCornerRadiusDp,
                     cardBorderWidthDp = cardBorderWidthDp,
@@ -449,23 +468,24 @@ private fun GraphicsLayerScope.applySwipeStyle(
     offset: Offset,
     thresholdPx: Float,
     baseScale: Float,
+    extraRotationDeg: Float,
 ) {
     val travelled = (hypot(offset.x, offset.y) / FLING_DISTANCE).coerceIn(0f, 1f)
     when (style) {
         CardAnimationStyle.CLASSIC -> {
-            rotationZ = (offset.x / thresholdPx) * 12f
+            rotationZ = (offset.x / thresholdPx) * 12f + extraRotationDeg
             alpha = 1f
             scaleX = baseScale
             scaleY = baseScale
         }
         CardAnimationStyle.FADE -> {
-            rotationZ = 0f
+            rotationZ = extraRotationDeg
             alpha = 1f - travelled
             scaleX = baseScale
             scaleY = baseScale
         }
         CardAnimationStyle.SHRINK -> {
-            rotationZ = 0f
+            rotationZ = extraRotationDeg
             alpha = 1f
             val shrink = 1f - travelled * 0.4f
             scaleX = baseScale * shrink
@@ -489,6 +509,11 @@ private val ZOOM_SPRING = spring<Float>(
 private val ZOOM_PAN_SPRING = spring<Offset>(
     dampingRatio = Spring.DampingRatioNoBouncy,
     stiffness = Spring.StiffnessMedium,
+)
+
+private val ROTATE_SETTLE_SPRING = spring<Float>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = Spring.StiffnessMediumLow,
 )
 
 // Distance at which Fade/Shrink finish (see applySwipeStyle). Not the exit distance — that comes
@@ -563,6 +588,9 @@ private fun SwipeCardSlot(
     role: CardRole,
     cardWidth: Dp,
     cardHeight: Dp,
+    otherShapeCardWidth: Dp,
+    quarterTurns: Int,
+    onRotationCommitted: (turns: Int) -> Unit,
     animationStyle: CardAnimationStyle,
     cardCornerRadiusDp: Int,
     cardBorderWidthDp: Float,
@@ -597,6 +625,29 @@ private fun SwipeCardSlot(
     // already-committed card that it's too late, without needing to detach/reattach the modifier
     // itself to do it.
     val activeRole = rememberUpdatedState(role)
+
+    // Rotation. [quarterTurns] is the turn count already baked into this card's layout and image
+    // (what the ViewModel holds); what's drawn on top of that is the live twist plus the settle
+    // animation, both relative to it. When a settle finishes and the ViewModel's count catches up,
+    // the extra angle must drop by exactly the same amount in the same frame — so it's derived from
+    // the difference against [appliedTurns] (the count the extra was last measured against) rather
+    // than reset separately, which would show one frame of double rotation. The rebase below then
+    // folds that difference in without changing what's drawn.
+    val currentTurns = rememberUpdatedState(quarterTurns)
+    var appliedTurns by remember(group.key) { mutableIntStateOf(quarterTurns) }
+    var gestureDeg by remember(group.key) { mutableFloatStateOf(0f) }
+    val settleDeg = remember(group.key) { Animatable(0f) }
+    LaunchedEffect(quarterTurns) {
+        val behind = quarterTurns - appliedTurns
+        if (behind != 0) {
+            settleDeg.snapTo(settleDeg.value - 90f * behind)
+            appliedTurns = quarterTurns
+        }
+    }
+    // Rigidly turning the card by 90 degrees gives the other shape at the wrong size; this is the
+    // factor that maps one onto the other, blended in as the card turns so it ends at exactly the
+    // other shape's re-fitted size and the layout swap at commit time is invisible.
+    val turnedScale = if (cardHeight.value > 0f) otherShapeCardWidth.value / cardHeight.value else 1f
 
     val configuration = LocalConfiguration.current
     val windowSize = rememberUpdatedState(
@@ -650,6 +701,7 @@ private fun SwipeCardSlot(
         showBorder = true,
         cornerRadiusDp = cardCornerRadiusDp,
         borderWidthDp = cardBorderWidthDp,
+        quarterTurns = quarterTurns,
         modifier = Modifier
             .size(cardWidth, cardHeight)
             .graphicsLayer {
@@ -660,7 +712,16 @@ private fun SwipeCardSlot(
                 val renderOffset = dragOffset + flingOffset.value
                 translationX = renderOffset.x + zoomPan.value.x
                 translationY = renderOffset.y + zoomPan.value.y
-                applySwipeStyle(animationStyle, renderOffset, thresholdPx, baseScale = scale.value)
+                val extraDeg = settleDeg.value + gestureDeg - 90f * (quarterTurns - appliedTurns)
+                val sinTurn = sin(extraDeg * (PI.toFloat() / 180f))
+                val turnFit = 1f + (turnedScale - 1f) * sinTurn * sinTurn
+                applySwipeStyle(
+                    animationStyle,
+                    renderOffset,
+                    thresholdPx,
+                    baseScale = scale.value * turnFit,
+                    extraRotationDeg = extraDeg,
+                )
             }
             .then(
                 if (role == CardRole.Warm) {
@@ -782,6 +843,28 @@ private fun SwipeCardSlot(
                                 scope.launch { scale.animateTo(1f, ZOOM_SPRING) }
                                 scope.launch { zoomPan.animateTo(Offset.Zero, ZOOM_PAN_SPRING) }
                             },
+                            onRotate = { deltaDeg ->
+                                if (activeRole.value != CardRole.Top || group.cover.isVideo) {
+                                    return@detectSwipeOrLongPressZoom
+                                }
+                                gestureDeg += deltaDeg
+                            },
+                            onRotateEnd = {
+                                if (activeRole.value != CardRole.Top) return@detectSwipeOrLongPressZoom
+                                // Snap to the nearest quarter turn — any number of them, either way.
+                                val turnsNow = currentTurns.value
+                                val total = settleDeg.value + gestureDeg - 90f * (turnsNow - appliedTurns)
+                                val deltaTurns = (total / 90f).roundToInt()
+                                // Same hand-over order as the drag: the Animatable takes the value
+                                // before the live twist is cleared, or one frame would draw 0.
+                                scope.launch {
+                                    appliedTurns = turnsNow
+                                    settleDeg.snapTo(total)
+                                    gestureDeg = 0f
+                                    settleDeg.animateTo(deltaTurns * 90f, ROTATE_SETTLE_SPRING)
+                                    if (deltaTurns != 0) onRotationCommitted(turnsNow + deltaTurns)
+                                }
+                            },
                         )
                     }
                 },
@@ -795,6 +878,10 @@ private fun SwipeCardSlot(
  * past touch slop (swipe) or holding still past the long-press timeout (zoom) — wins, and the
  * gesture stays in that mode until the finger lifts. This is why a deliberate hold-and-drag to
  * look around a zoomed photo can never suddenly turn into a swipe.
+ *
+ * A second finger landing before either has resolved turns the gesture into a two-finger rotate
+ * instead ([onRotate] gets each step's change in degrees, [onRotateEnd] fires when a finger lifts);
+ * a second finger arriving after a swipe or zoom is already underway is ignored.
  */
 private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
     onDrag: (Offset) -> Unit,
@@ -802,6 +889,8 @@ private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
     onZoomStart: (TransformOrigin) -> Unit,
     onZoomPan: (Offset) -> Unit,
     onZoomEnd: () -> Unit,
+    onRotate: (deltaDegrees: Float) -> Unit,
+    onRotateEnd: () -> Unit,
 ) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
@@ -813,11 +902,18 @@ private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
         var totalDrag = Offset.Zero
         var isZoom = false
         var isSwipe = false
+        var isRotate = false
 
-        while (!isZoom && !isSwipe) {
+        while (!isZoom && !isSwipe && !isRotate) {
             val event = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { awaitPointerEvent() }
             if (event == null) {
                 isZoom = true
+                break
+            }
+            // A second finger before swipe or zoom has resolved makes this a rotate; once either
+            // has, later fingers are ignored (a swipe already underway wins).
+            if (event.changes.count { it.pressed } >= 2) {
+                isRotate = true
                 break
             }
             val change = event.changes.firstOrNull { it.positionChanged() }
@@ -835,7 +931,26 @@ private suspend fun PointerInputScope.detectSwipeOrLongPressZoom(
             }
         }
 
-        if (isZoom) {
+        if (isRotate) {
+            while (true) {
+                val event = awaitPointerEvent()
+                if (event.changes.count { it.pressed } < 2) {
+                    onRotateEnd()
+                    // Swallow what's left of the gesture: a finger still down must not start a swipe.
+                    if (event.changes.any { it.pressed }) {
+                        while (true) {
+                            val rest = awaitPointerEvent()
+                            rest.changes.forEach { it.consume() }
+                            if (rest.changes.none { it.pressed }) break
+                        }
+                    }
+                    break
+                }
+                val rotation = event.calculateRotation()
+                if (rotation != 0f) onRotate(rotation)
+                event.changes.forEach { if (it.positionChanged()) it.consume() }
+            }
+        } else if (isZoom) {
             // Zoom expands from right under the finger, not the card's center, so whatever the
             // user pressed on is what stays put as the photo grows.
             val origin = TransformOrigin(

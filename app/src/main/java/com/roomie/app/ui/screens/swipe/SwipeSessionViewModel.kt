@@ -60,6 +60,9 @@ data class SwipeUiState(
     val cardBorderWidthDp: Float = 1f,
     val stackBrightnessEnabled: Boolean = false,
     val stackBrightnessLevel: Float = 1f,
+    /** [MediaGroup.key] -> how many 90-degree turns the user gave that photo this session. Lives
+     *  only here: never written anywhere, and cleared when a new folder session loads. */
+    val quarterTurnsByKey: Map<String, Int> = emptyMap(),
     /** Size of the whole folder this session started from (including anything already skipped
      *  past via "start at this photo"), for the "12 of 345" position counter. */
     val totalCount: Int = 0,
@@ -220,7 +223,14 @@ class SwipeSessionViewModel(
         if (sessionKey == loadedSessionKey) return
         loadedSessionKey = sessionKey
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, folderName = displayName, isStackExhausted = false) }
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    folderName = displayName,
+                    isStackExhausted = false,
+                    quarterTurnsByKey = emptyMap(),
+                )
+            }
             undoHistory.clear()
             browseHistory.clear()
             pendingMoveJobs.clear()
@@ -253,6 +263,10 @@ class SwipeSessionViewModel(
                 )
             }
         }
+    }
+
+    fun setQuarterTurns(key: String, turns: Int) {
+        _uiState.update { it.copy(quarterTurnsByKey = it.quarterTurnsByKey + (key to turns)) }
     }
 
     private fun actionFor(direction: SwipeDirection): SwipeCardAction = when (direction) {

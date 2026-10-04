@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -64,6 +66,9 @@ fun SwipeCard(
     showBorder: Boolean = false,
     cornerRadiusDp: Int = 32,
     borderWidthDp: Float = 1f,
+    /** Session-only 90-degree turns of the photo (any integer; only the value mod 4 shows). The
+     *  caller sizes this card for the turned shape — see [SwipeCardSlot]'s `quarterTurns`. */
+    quarterTurns: Int = 0,
 ) {
     val strings = LocalAppStrings.current
     var isPlayingVideo by remember(group.key) { mutableStateOf(false) }
@@ -83,15 +88,42 @@ fun SwipeCard(
                     Modifier
                 },
             ),
+        // Centered so a turned image (requiredSize, below) sits on the card's center: requiredSize
+        // centers its content within the size it reports to the parent, which is coerced to the
+        // card's own bounds, so top-start alignment would leave it off-center by the difference.
+        contentAlignment = Alignment.Center,
     ) {
         val context = LocalContext.current
         val density = LocalDensity.current
         val widthPx = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
         val heightPx = with(density) { maxHeight.roundToPx() }.coerceAtLeast(1)
-        val screenKey = screenCacheKey(group.cover.uri, widthPx, heightPx)
-        val zoomWidthPx = (widthPx * MAX_PEEK_ZOOM).toInt().coerceAtLeast(1)
-        val zoomHeightPx = (heightPx * MAX_PEEK_ZOOM).toInt().coerceAtLeast(1)
+        // The photo is always decoded and laid out as itself — a box with its own, unturned aspect
+        // ratio — and then turned. A sideways turn makes the card the box's width/height swapped,
+        // so the box is the card's dimensions swapped back; turned by 90 degrees it fills the card
+        // exactly. Sizing the request for the box keeps the decode matched to what's drawn.
+        val turns = Math.floorMod(quarterTurns, 4)
+        val sideways = turns % 2 == 1
+        val imageWidthPx = if (sideways) heightPx else widthPx
+        val imageHeightPx = if (sideways) widthPx else heightPx
+        val imageModifier = if (turns == 0) {
+            Modifier.fillMaxSize()
+        } else {
+            Modifier
+                .requiredSize(
+                    width = if (sideways) maxHeight else maxWidth,
+                    height = if (sideways) maxWidth else maxHeight,
+                )
+                .graphicsLayer { rotationZ = 90f * turns }
+        }
+        val screenKey = screenCacheKey(group.cover.uri, imageWidthPx, imageHeightPx)
+        val zoomWidthPx = (imageWidthPx * MAX_PEEK_ZOOM).toInt().coerceAtLeast(1)
+        val zoomHeightPx = (imageHeightPx * MAX_PEEK_ZOOM).toInt().coerceAtLeast(1)
         val zoomKey = zoomCacheKey(group.cover.uri, zoomWidthPx, zoomHeightPx)
+        // Not state on purpose: a request that changed because this changed would just reload
+        // itself. It's only read when the request is rebuilt for another reason (a turn changes
+        // the decode size), so the previous bitmap can stand in until the new one is ready
+        // instead of the card flashing its bare background.
+        val lastShownKey = remember { arrayOfNulls<String>(1) }
 
         if (group.cover.isVideo && isPlayingVideo) {
             InlineVideoPlayer(
@@ -103,7 +135,7 @@ fun SwipeCard(
             // Screen-sized image stays mounted for the whole life of the card. Zoom used to swap
             // this request for a different size/key; Coil dropped the current bitmap, painted the
             // surface background, then faded the new decode in.
-            // Precision.EXACT makes Coil resize to exactly widthPx/heightPx at decode time instead
+            // Precision.EXACT makes Coil resize to exactly the requested size at decode time instead
             // of possibly leaving a leftover inSampleSize-rounded bitmap for Compose to scale later.
             // Confirmed on-device this alone does NOT fix the diagonal-edge staircase below — kept
             // anyway since decoding at the exact size we're about to draw is correct regardless.
@@ -116,16 +148,18 @@ fun SwipeCard(
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(group.cover.uri)
-                    .size(widthPx, heightPx)
+                    .size(imageWidthPx, imageHeightPx)
                     .precision(Precision.EXACT)
                     .allowHardware(false)
                     .memoryCacheKey(screenKey)
+                    .placeholderMemoryCacheKey(lastShownKey[0]?.takeIf { it != screenKey })
                     .crossfade(false)
                     .build(),
                 contentDescription = group.cover.displayName,
                 contentScale = ContentScale.Fit,
                 filterQuality = FilterQuality.High,
-                modifier = Modifier.fillMaxSize(),
+                onSuccess = { lastShownKey[0] = screenKey },
+                modifier = imageModifier,
             )
             if (isZoomed && !group.cover.isVideo) {
                 SubcomposeAsyncImage(
@@ -143,7 +177,7 @@ fun SwipeCard(
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                     filterQuality = FilterQuality.High,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = imageModifier,
                 ) {
                     // Draw nothing until the sharper bitmap is actually ready. The screen image
                     // underneath keeps showing, scaled by the slot's graphicsLayer. painter.state
