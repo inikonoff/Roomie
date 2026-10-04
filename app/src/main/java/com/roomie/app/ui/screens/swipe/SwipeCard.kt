@@ -2,7 +2,6 @@ package com.roomie.app.ui.screens.swipe
 
 import android.net.Uri
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -27,8 +26,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -69,21 +73,47 @@ fun SwipeCard(
     /** Session-only 90-degree turns of the photo (any integer; only the value mod 4 shows). The
      *  caller sizes this card for the turned shape — see [SwipeCardSlot]'s `quarterTurns`. */
     quarterTurns: Int = 0,
+    /** How much the caller's layer is currently scaling this card for the turn animation. The
+     *  corner radius and border are drawn at 1/this so they stay the same size on screen instead of
+     *  swelling with the card and snapping back when the turn commits. Read in the draw phase only,
+     *  so it costs nothing unless it actually changes. */
+    layerScale: () -> Float = { 1f },
 ) {
     val strings = LocalAppStrings.current
     var isPlayingVideo by remember(group.key) { mutableStateOf(false) }
     val shape = RoundedCornerShape(cornerRadiusDp.dp)
 
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val seamColor = MaterialTheme.colorScheme.background
     BoxWithConstraints(
         modifier = modifier
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surface, shape)
+            // Clip(shape) written out as a layer block, so the radius can follow layerScale().
+            .graphicsLayer {
+                val scale = layerScale()
+                this.shape = if (scale == 1f) shape else RoundedCornerShape((cornerRadiusDp / scale).dp)
+                clip = true
+            }
+            .background(surfaceColor)
             // Seam between stacked cards. Drawn for every composed slot (top, next, and the one
             // after that), not only once a card becomes top — inserting Modifier.border on the
-            // release frame was a measure pass on the heaviest frame of the swipe.
+            // release frame was a measure pass on the heaviest frame of the swipe. Drawn by hand
+            // rather than Modifier.border so its width and radius can follow layerScale(); stays a
+            // single always-present draw node for the same reason.
             .then(
                 if (showBorder && borderWidthDp > 0f) {
-                    Modifier.border(borderWidthDp.dp, MaterialTheme.colorScheme.background, shape)
+                    Modifier.drawWithContent {
+                        drawContent()
+                        val scale = layerScale()
+                        val strokePx = borderWidthDp.dp.toPx() / scale
+                        val half = strokePx / 2f
+                        drawRoundRect(
+                            color = seamColor,
+                            topLeft = Offset(half, half),
+                            size = Size(size.width - strokePx, size.height - strokePx),
+                            cornerRadius = CornerRadius((cornerRadiusDp.dp.toPx() / scale - half).coerceAtLeast(0f)),
+                            style = Stroke(width = strokePx),
+                        )
+                    }
                 } else {
                     Modifier
                 },

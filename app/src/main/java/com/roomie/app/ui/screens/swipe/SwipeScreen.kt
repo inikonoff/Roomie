@@ -648,6 +648,11 @@ private fun SwipeCardSlot(
     // factor that maps one onto the other, blended in as the card turns so it ends at exactly the
     // other shape's re-fitted size and the layout swap at commit time is invisible.
     val turnedScale = if (cardHeight.value > 0f) otherShapeCardWidth.value / cardHeight.value else 1f
+    fun extraDegNow(): Float = settleDeg.value + gestureDeg - 90f * (quarterTurns - appliedTurns)
+    fun turnFitFor(extraDeg: Float): Float {
+        val sinTurn = sin(extraDeg * (PI.toFloat() / 180f))
+        return 1f + (turnedScale - 1f) * sinTurn * sinTurn
+    }
 
     val configuration = LocalConfiguration.current
     val windowSize = rememberUpdatedState(
@@ -702,6 +707,7 @@ private fun SwipeCardSlot(
         cornerRadiusDp = cardCornerRadiusDp,
         borderWidthDp = cardBorderWidthDp,
         quarterTurns = quarterTurns,
+        layerScale = { turnFitFor(extraDegNow()) },
         modifier = Modifier
             .size(cardWidth, cardHeight)
             .graphicsLayer {
@@ -712,9 +718,8 @@ private fun SwipeCardSlot(
                 val renderOffset = dragOffset + flingOffset.value
                 translationX = renderOffset.x + zoomPan.value.x
                 translationY = renderOffset.y + zoomPan.value.y
-                val extraDeg = settleDeg.value + gestureDeg - 90f * (quarterTurns - appliedTurns)
-                val sinTurn = sin(extraDeg * (PI.toFloat() / 180f))
-                val turnFit = 1f + (turnedScale - 1f) * sinTurn * sinTurn
+                val extraDeg = extraDegNow()
+                val turnFit = turnFitFor(extraDeg)
                 applySwipeStyle(
                     animationStyle,
                     renderOffset,
