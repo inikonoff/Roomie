@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.roomie.app"
+    namespace = "com.cullect.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.roomie.app"
+        applicationId = "com.cullect.app"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -81,7 +81,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3") {
         // Pulls in a native lib (libandroidx.graphics.path.so) for shape-morphing APIs
-        // (MaterialShapes/RoundedPolygon) that Roomie's own UI never uses. That native lib has
+        // (MaterialShapes/RoundedPolygon) that Cullect's own UI never uses. That native lib has
         // caused 16 KB page-size crashes on newer Android 15 devices; drop it rather than carry
         // dead weight that can crash the app before a single line of our code even runs.
         exclude(group = "androidx.graphics", module = "graphics-shapes")
@@ -99,7 +99,7 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     // DataStore. Pinned to 1.0.0 (pre-dating the 1.1.0 multi-process "shared counter" feature,
-    // which ships as a native lib, libdatastore_shared_counter.so) — Roomie is single-process and
+    // which ships as a native lib, libdatastore_shared_counter.so) — Cullect is single-process and
     // never needed that guarantee, and that native lib is a second suspect in 16 KB page-size
     // crashes on newer Android 15 devices.
     implementation("androidx.datastore:datastore-preferences:1.0.0")

@@ -1,4 +1,4 @@
-# Roomie
+# Cullect
 
 Android app for fast, swipe-based gallery cleanup (Tinder-style cards), built per the MVP TZ.
 Kotlin + Jetpack Compose, 100% offline, deleted files go to the system trash
@@ -18,8 +18,8 @@ compiles, not that every gesture feels right.
 ## Project layout
 
 ```
-roomie/
-  app/src/main/java/com/roomie/app/
+cullect/
+  app/src/main/java/com/cullect/app/
     data/
       media/       MediaStore access (MediaRepository), burst/video grouping, empty-folder cleanup
       db/          Room: trash registry only
@@ -36,7 +36,7 @@ roomie/
       navigation         Single-Activity NavHost wiring all of the above
       theme              Warm & Cozy color palette, shapes, spring constants
     work/          TrashCleanupWorker (WorkManager, device-idle + battery-not-low)
-    AppContainer / RoomieApplication / MainActivity   manual DI wiring (no DI framework)
+    AppContainer / CullectApplication / MainActivity   manual DI wiring (no DI framework)
 ```
 
 ## Key design decisions (and why)
@@ -45,7 +45,7 @@ roomie/
   without buying much; `AppContainer` + `ViewModelFactory` cover every screen.
 - **Room stores the trash registry**, not just a DataStore flag, because the app enforces its own
   configurable retention (1/3/7/30 days) independent of whatever the OS's own trash auto-purge
-  window is. On API 30+, `createTrashRequest` hides the file immediately (`IS_TRASHED`); Roomie's
+  window is. On API 30+, `createTrashRequest` hides the file immediately (`IS_TRASHED`); Cullect's
   own worker permanently deletes it once *its* countdown elapses. On API 26-29 (no system trash),
   the file stays visible until that same countdown fires — an accepted MVP simplification for
   legacy Android, called out in the TZ (section 8.2).
@@ -60,18 +60,18 @@ roomie/
   same folder taken within ~1.5s of each other collapse into one card; short videos are always their
   own single-item unit. See `BurstGrouping.kt` for the exact heuristic and how to plug in a real
   burst id if a target device happens to expose one.
-- **Empty-folder deletion only touches directories Roomie itself just vacated** (passed in
+- **Empty-folder deletion only touches directories Cullect itself just vacated** (passed in
   explicitly by the cleanup worker), and never removes a top-level media folder (DCIM, Pictures,
   WhatsApp, ...) even if it's empty — those are here for other apps to write into. It requires
   `MANAGE_EXTERNAL_STORAGE` and is a no-op without it.
 - **Ads/Billing are a `NoOpMonetizationGateway` stub.** The swipe limit, paywall screen, and
   settings toggle are fully wired; swap the gateway implementation for real AdMob/Play Billing
   calls without touching any caller. Monetization is off by default (`monetizationEnabled = false`
-  in `RoomieSettings`), matching "off during personal use" from the TZ.
+  in `CullectSettings`), matching "off during personal use" from the TZ.
 - **The trash-confirmation dialog listener lives at the NavHost level**, not inside the swipe
   screen. "Delete all" is pressed from the trash-preview screen, one navigation hop after the swipe
   screen has already left composition — so the `IntentSender` launcher has to live somewhere that
-  outlives individual screens (see `RoomieNavHost.kt`).
+  outlives individual screens (see `CullectNavHost.kt`).
 
 ## Suggested manual QA
 
