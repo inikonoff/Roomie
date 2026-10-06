@@ -115,6 +115,7 @@ interface AppStrings {
     val reviewTrash: String
     val folderIsClean: String
     val undo: String
+    val undoToastMessage: String
     val selectMoveFolderPrompt: String
 
     // Trash folder
@@ -122,6 +123,11 @@ interface AppStrings {
     fun expiredTrashCount(count: Int): String
     val trashIsEmpty: String
     val restore: String
+    val restoreAll: String
+    val selectAll: String
+    val restoreSelected: String
+    val cancelSelection: String
+    fun selectedCount(count: Int): String
 
     // Summary
     val allCleanedUp: String
@@ -237,12 +243,18 @@ object EnglishStrings : AppStrings {
     override val reviewTrash = "Review trash"
     override val folderIsClean = "Nothing left here — this folder is clean."
     override val undo = "Undo"
+    override val undoToastMessage = "Swiped"
     override val selectMoveFolderPrompt = "Choose a destination folder in Settings first"
 
     override fun trashTitle(count: Int) = "Trash ($count)"
     override fun expiredTrashCount(count: Int) = "$count expired — tap Empty trash to free up space"
     override val trashIsEmpty = "Trash is empty."
     override val restore = "Restore"
+    override val restoreAll = "Restore all"
+    override val selectAll = "Select all"
+    override val restoreSelected = "Restore selected"
+    override val cancelSelection = "Cancel selection"
+    override fun selectedCount(count: Int) = "Selected: $count"
 
     override val allCleanedUp = "All cleaned up!"
     override fun itemsRemoved(count: Int) = "$count item${if (count == 1) "" else "s"} removed"
@@ -358,12 +370,18 @@ object RussianStrings : AppStrings {
     override val reviewTrash = "Просмотр корзины"
     override val folderIsClean = "Здесь больше ничего нет — папка чистая."
     override val undo = "Отменить"
+    override val undoToastMessage = "Готово"
     override val selectMoveFolderPrompt = "Сначала выберите папку назначения в Настройках"
 
     override fun trashTitle(count: Int) = "Корзина ($count)"
     override fun expiredTrashCount(count: Int) = "Просрочено: $count — нажмите «Очистить корзину», чтобы освободить место"
     override val trashIsEmpty = "Корзина пуста."
     override val restore = "Восстановить"
+    override val restoreAll = "Восстановить всё"
+    override val selectAll = "Выбрать всё"
+    override val restoreSelected = "Восстановить выбранное"
+    override val cancelSelection = "Отменить выбор"
+    override fun selectedCount(count: Int) = "Выбрано: $count"
 
     override val allCleanedUp = "Всё убрано!"
     override fun itemsRemoved(count: Int) = "Удалено объектов: $count"

@@ -52,7 +52,8 @@ data class SwipeUiState(
     val sessionSwipeCount: Int = 0,
     val freeSwipeLimit: Int = 100,
     val hasReachedLimit: Boolean = false,
-    val canUndo: Boolean = false,
+    /** How many swipes can currently be undone (bounded by [MAX_UNDO_HISTORY]). */
+    val undoCount: Int = 0,
     val isStackExhausted: Boolean = false,
     val cardAnimationStyle: CardAnimationStyle = CardAnimationStyle.CLASSIC,
     val edgePaddingDp: Int = 24,
@@ -92,6 +93,8 @@ data class SwipeUiState(
      *  configuration that matches neither preset. */
     val gesturePreset: SwipeGesturePreset? = null,
 ) {
+    val canUndo: Boolean get() = undoCount > 0
+
     val currentGroup: MediaGroup? get() = stack.firstOrNull()
 
     /** 1-based position of [currentGroup] within the original folder ordering. Looked up by key
@@ -129,6 +132,11 @@ class SwipeSessionViewModel(
      *  SwipeScreen turns this into a snackbar pointing at Settings. See [swipe]. */
     private val _moveTargetMissingEvents = MutableSharedFlow<Unit>()
     val moveTargetMissingEvents: SharedFlow<Unit> = _moveTargetMissingEvents
+
+    /** Fired once a swipe has actually been committed (after it landed in the undo history), so
+     *  SwipeScreen can offer a quick "Undo" toast. Not fired for a browse-back or a rejected swipe. */
+    private val _swipeCommittedEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val swipeCommittedEvents: SharedFlow<Unit> = _swipeCommittedEvents
 
     private val undoHistory = ArrayDeque<SwipeAction>(MAX_UNDO_HISTORY)
 
@@ -212,7 +220,7 @@ class SwipeSessionViewModel(
             if (filtered.size == state.stack.size) {
                 state
             } else {
-                state.copy(stack = filtered, isStackExhausted = filtered.isEmpty(), canUndo = undoHistory.isNotEmpty())
+                state.copy(stack = filtered, isStackExhausted = filtered.isEmpty(), undoCount = undoHistory.size)
             }
         }
     }
@@ -257,7 +265,7 @@ class SwipeSessionViewModel(
                 it.copy(
                     stack = stack,
                     isLoading = false,
-                    canUndo = false,
+                    undoCount = 0,
                     isStackExhausted = stack.isEmpty(),
                     totalCount = groups.size,
                     originalIndexByKey = originalIndexByKey,
@@ -349,7 +357,7 @@ class SwipeSessionViewModel(
             val newStack = if (action == SwipeCardAction.POSTPONE) rest + group else rest
             it.copy(
                 stack = newStack,
-                canUndo = undoHistory.isNotEmpty(),
+                undoCount = undoHistory.size,
                 isStackExhausted = newStack.isEmpty(),
                 deletedCount = it.deletedCount + if (action == SwipeCardAction.DELETE) 1 else 0,
                 deletedBytes = it.deletedBytes + if (action == SwipeCardAction.DELETE) group.totalSizeBytes else 0L,
@@ -367,6 +375,7 @@ class SwipeSessionViewModel(
 
         pendingSwipeIncrement++
         if (pendingSwipeIncrement >= SWIPE_COUNT_FLUSH_INTERVAL) flushSwipeCount()
+        _swipeCommittedEvents.tryEmit(Unit)
         return true
     }
 
@@ -401,7 +410,7 @@ class SwipeSessionViewModel(
             SwipeCardAction.KEEP, SwipeCardAction.NONE, SwipeCardAction.POSTPONE -> Unit
         }
         if (alreadyMoved) {
-            _uiState.update { it.copy(canUndo = undoHistory.isNotEmpty()) }
+            _uiState.update { it.copy(undoCount = undoHistory.size) }
             return
         }
         _uiState.update {
@@ -414,7 +423,7 @@ class SwipeSessionViewModel(
             }
             it.copy(
                 stack = listOf(action.group) + withoutPostponedCopy,
-                canUndo = undoHistory.isNotEmpty(),
+                undoCount = undoHistory.size,
                 isStackExhausted = false,
                 deletedCount = it.deletedCount - if (action.action == SwipeCardAction.DELETE) 1 else 0,
                 deletedBytes = it.deletedBytes - if (action.action == SwipeCardAction.DELETE) action.group.totalSizeBytes else 0L,

@@ -13,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateRotation
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -36,14 +35,15 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -90,6 +90,7 @@ import com.cullect.app.ui.strings.LocalAppStrings
 import com.cullect.app.ui.theme.SwipeLeftDelete
 import com.cullect.app.ui.theme.SwipePostpone
 import com.cullect.app.ui.theme.SwipeRightKeep
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.PI
@@ -131,6 +132,19 @@ fun SwipeScreen(
         }
     }
 
+    // collectLatest: a new swipe replaces the previous toast instead of queueing behind it, so the
+    // toast's Undo always reverts the swipe that was just made, never an older one.
+    LaunchedEffect(viewModel) {
+        viewModel.swipeCommittedEvents.collectLatest {
+            val result = snackbarHostState.showSnackbar(
+                message = strings.undoToastMessage,
+                actionLabel = strings.undo,
+                duration = SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) viewModel.undo()
+        }
+    }
+
     LaunchedEffect(viewModel) {
         viewModel.moveTargetMissingEvents.collect {
             snackbarHostState.showSnackbar(strings.selectMoveFolderPrompt)
@@ -160,6 +174,30 @@ fun SwipeScreen(
                     }
                 },
                 actions = {
+                    // Undo with the number of steps that can still be undone. The count badge is a
+                    // sibling of the IconButton (not inside it), so IconButton's own clip never cuts it.
+                    Box(modifier = Modifier.padding(end = 4.dp).size(48.dp), contentAlignment = Alignment.Center) {
+                        IconButton(onClick = { if (uiState.canUndo) viewModel.undo() }, enabled = uiState.canUndo) {
+                            Icon(
+                                Icons.Filled.Undo,
+                                contentDescription = strings.undo,
+                                tint = if (uiState.canUndo) {
+                                    MaterialTheme.colorScheme.onSurface
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                                },
+                            )
+                        }
+                        if (uiState.undoCount > 0) {
+                            Badge(
+                                modifier = Modifier.align(Alignment.TopEnd),
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            ) {
+                                Text(uiState.undoCount.toString())
+                            }
+                        }
+                    }
+
                     // Not an IconButton around the badge: IconButton clips its content to a 40dp
                     // circle, which cut the badge (it hangs off the icon's top-right corner) no matter
                     // how far from the screen edge it sat. The tap target is a clipped layer behind
@@ -241,8 +279,6 @@ fun SwipeScreen(
                     )
                 }
             }
-
-            BottomActionBar(strings = strings, canUndo = uiState.canUndo, onUndo = viewModel::undo)
         }
     }
 }
@@ -313,39 +349,6 @@ private fun GamifiedProgressBar(
                 .width(postponedWidth)
                 .fillMaxHeight()
                 .background(SwipePostpone),
-        )
-    }
-}
-
-@Composable
-private fun BottomActionBar(strings: AppStrings, canUndo: Boolean, onUndo: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        ExtendedFloatingActionButton(
-            onClick = { if (canUndo) onUndo() },
-            icon = {
-                Icon(
-                    Icons.Filled.Undo,
-                    contentDescription = null,
-                    tint = if (canUndo) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                    },
-                )
-            },
-            text = {
-                Text(
-                    strings.undo,
-                    color = if (canUndo) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                    },
-                )
-            },
         )
     }
 }

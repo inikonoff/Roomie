@@ -59,6 +59,14 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
         viewModelScope.launch { trashRepository.restoreFromTrash(listOf(entry)) }
     }
 
+    /** Restores several entries at once through the same [TrashRepository.restoreFromTrash] call
+     *  [restore] uses for one — backs both multi-select and "restore all". */
+    fun restoreMany(entryIds: Set<String>) {
+        val toRestore = entries.value.filter { it.stableId in entryIds }
+        if (toRestore.isEmpty()) return
+        viewModelScope.launch { trashRepository.restoreFromTrash(toRestore) }
+    }
+
     /** Permanently deletes [entries] now instead of waiting out the retention countdown — the
      *  "empty trash" action passes every current entry. */
     fun requestDeleteForever(entries: List<TrashEntry>) {

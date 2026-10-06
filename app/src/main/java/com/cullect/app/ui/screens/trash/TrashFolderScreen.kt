@@ -6,7 +6,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +27,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.RestoreFromTrash
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,7 +66,8 @@ import com.cullect.app.util.formatBytes
  * The persistent "Trash" folder shown on the main screen — every file Cullect has soft-trashed
  * (swiped away, but still physically on disk — see [com.cullect.app.data.trash.TrashRepository]'s
  * class doc). Tiles are deliberately minimal, matching the old swipe-session review screen: just
- * the photo and a single X to restore it. The only way to actually, permanently delete is the
+ * the photo and a single X to restore it (or long-press to multi-select and restore several, or
+ * "restore all" in the top bar). The only way to actually, permanently delete is the
  * "empty trash" action in the top bar — a single deliberate action instead of a delete button on
  * every tile.
  */
@@ -77,6 +83,21 @@ fun TrashFolderScreen(
     val strings = LocalAppStrings.current
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Multi-select: a long-press on a tile starts it, taps then toggle tiles. Restoring is the only
+    // bulk action — permanent delete stays the single deliberate "empty trash" button.
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<String>()) }
+    // A restored entry disappears from the list; drop it from the selection too.
+    LaunchedEffect(entries) {
+        val present = entries.mapTo(HashSet()) { it.stableId }
+        if (!present.containsAll(selectedIds)) selectedIds = selectedIds.filterTo(HashSet()) { it in present }
+        if (entries.isEmpty()) selectionMode = false
+    }
+    BackHandler(enabled = selectionMode && deleteProgress == null) {
+        selectionMode = false
+        selectedIds = emptySet()
+    }
 
     // Only fires once a real, physical delete has actually completed (see the ViewModel doc) —
     // never on a cancelled confirmation dialog, and never for the soft-trash that happens on swipe.
@@ -132,8 +153,8 @@ fun TrashFolderScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text(strings.trashTitle(entries.size))
-                        if (expiredCount > 0) {
+                        Text(if (selectionMode) strings.selectedCount(selectedIds.size) else strings.trashTitle(entries.size))
+                        if (!selectionMode && expiredCount > 0) {
                             Text(
                                 strings.expiredTrashCount(expiredCount),
                                 style = MaterialTheme.typography.labelSmall,
@@ -144,12 +165,48 @@ fun TrashFolderScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = {
-                    IconButton(onClick = onBack, enabled = deleteProgress == null) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = strings.back)
+                    if (selectionMode) {
+                        IconButton(
+                            onClick = {
+                                selectionMode = false
+                                selectedIds = emptySet()
+                            },
+                        ) {
+                            Icon(Icons.Filled.Close, contentDescription = strings.cancelSelection)
+                        }
+                    } else {
+                        IconButton(onClick = onBack, enabled = deleteProgress == null) {
+                            Icon(Icons.Filled.ArrowBack, contentDescription = strings.back)
+                        }
                     }
                 },
                 actions = {
-                    if (entries.isNotEmpty()) {
+                    if (selectionMode) {
+                        IconButton(
+                            onClick = { selectedIds = entries.mapTo(HashSet()) { it.stableId } },
+                            enabled = deleteProgress == null,
+                        ) {
+                            Icon(Icons.Filled.SelectAll, contentDescription = strings.selectAll)
+                        }
+                        IconButton(
+                            onClick = {
+                                viewModel.restoreMany(selectedIds)
+                                selectionMode = false
+                                selectedIds = emptySet()
+                            },
+                            enabled = selectedIds.isNotEmpty() && deleteProgress == null,
+                        ) {
+                            Icon(Icons.Filled.RestoreFromTrash, contentDescription = strings.restoreSelected)
+                        }
+                    } else if (entries.isNotEmpty()) {
+                        // No confirmation: restoring is reversible (swipe it away again), unlike
+                        // "empty trash" next to it.
+                        IconButton(
+                            onClick = { viewModel.restoreMany(entries.mapTo(HashSet()) { it.stableId }) },
+                            enabled = deleteProgress == null,
+                        ) {
+                            Icon(Icons.Filled.RestoreFromTrash, contentDescription = strings.restoreAll)
+                        }
                         IconButton(
                             onClick = { viewModel.requestDeleteForever(entries) },
                             enabled = deleteProgress == null,
@@ -191,7 +248,22 @@ fun TrashFolderScreen(
                             strings = strings,
                             entry = entry,
                             allowDecode = allowDecode,
+                            selectionMode = selectionMode,
+                            selected = entry.stableId in selectedIds,
                             onRestore = { viewModel.restore(entry) },
+                            onToggleSelected = {
+                                selectedIds = if (entry.stableId in selectedIds) {
+                                    selectedIds - entry.stableId
+                                } else {
+                                    selectedIds + entry.stableId
+                                }
+                            },
+                            onStartSelection = {
+                                if (deleteProgress == null) {
+                                    selectionMode = true
+                                    selectedIds = setOf(entry.stableId)
+                                }
+                            },
                         )
                     }
                 }
@@ -200,19 +272,28 @@ fun TrashFolderScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TrashEntryTile(
     strings: AppStrings,
     entry: TrashEntry,
     allowDecode: Boolean,
+    selectionMode: Boolean,
+    selected: Boolean,
     onRestore: () -> Unit,
+    onToggleSelected: () -> Unit,
+    onStartSelection: () -> Unit,
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .aspectRatio(1f)
             .clip(ContainerShape)
-            .background(MaterialTheme.colorScheme.surface),
+            .background(MaterialTheme.colorScheme.surface)
+            .combinedClickable(
+                onClick = { if (selectionMode) onToggleSelected() },
+                onLongClick = { if (!selectionMode) onStartSelection() },
+            ),
     ) {
         MediaThumbnail(
             uri = Uri.parse(entry.uri),
@@ -221,16 +302,27 @@ private fun TrashEntryTile(
             modifier = Modifier.fillMaxSize(),
             allowDecode = allowDecode,
         )
-        IconButton(
-            onClick = onRestore,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(4.dp)
-                .size(28.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.55f)),
-        ) {
-            Icon(Icons.Filled.Close, contentDescription = strings.restore, tint = Color.White)
+        if (selectionMode) {
+            if (selected) {
+                Box(modifier = Modifier.matchParentSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)))
+            }
+            Checkbox(
+                checked = selected,
+                onCheckedChange = null,
+                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(20.dp),
+            )
+        } else {
+            IconButton(
+                onClick = onRestore,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f)),
+            ) {
+                Icon(Icons.Filled.Close, contentDescription = strings.restore, tint = Color.White)
+            }
         }
     }
 }
