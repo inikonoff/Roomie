@@ -87,7 +87,9 @@ private val DarkColors = darkColorScheme(
     onPrimaryContainer = Color(0xFFF0D0C8),
     inversePrimary = Color(0xFF4A362C),
 
-    secondary = Secondary,
+    // Lighter than the light scheme's sage: the same tone was only 4.2:1 on the dark cards, too
+    // dim for the small hint texts and values that use it.
+    secondary = Color(0xFF9DB09E),
     onSecondary = Color(0xFF1C211C),
     secondaryContainer = Color(0xFF4A362C),
     onSecondaryContainer = Color(0xFFF0D0C8),

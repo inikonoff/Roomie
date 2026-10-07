@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -69,9 +70,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.cullect.app.data.media.GalleryFolder
@@ -83,6 +86,7 @@ import com.cullect.app.data.settings.SwipeCardAction
 import com.cullect.app.data.settings.ThemeMode
 import com.cullect.app.ui.screens.swipe.SwipeDirection
 import com.cullect.app.ui.components.CullectSlider
+import com.cullect.app.ui.components.cullectSegmentedColors
 import com.cullect.app.ui.strings.AppStrings
 import com.cullect.app.ui.strings.LocalAppStrings
 import com.cullect.app.ui.theme.ContainerShape
@@ -240,7 +244,13 @@ fun SettingsScreen(
                 SubsectionTitle(strings.sectionCardAnimation)
                 CardAnimationStyleSelector(strings, settings.cardAnimationStyle, viewModel::setCardAnimationStyle)
 
-                EdgePaddingSlider(strings, settings.edgePaddingDp, viewModel::setEdgePaddingDp)
+                SettingSlider(
+                    label = strings.edgePadding,
+                    value = settings.edgePaddingDp.toFloat(),
+                    valueRange = CullectSettings.MIN_EDGE_PADDING_DP.toFloat()..CullectSettings.MAX_EDGE_PADDING_DP.toFloat(),
+                    format = { it.roundToInt().toString() },
+                    onCommit = { viewModel.setEdgePaddingDp(it.roundToInt()) },
+                )
 
                 SwitchRow(
                     title = strings.stackBrightness,
@@ -248,41 +258,29 @@ fun SettingsScreen(
                     checked = settings.stackBrightnessEnabled,
                     onCheckedChange = viewModel::setStackBrightnessEnabled,
                 )
-                StackBrightnessSlider(
-                    strings = strings,
-                    level = settings.stackBrightnessLevel,
+                SettingSlider(
+                    label = strings.stackBrightnessLevel,
+                    value = settings.stackBrightnessLevel,
+                    valueRange = CullectSettings.MIN_STACK_BRIGHTNESS..CullectSettings.MAX_STACK_BRIGHTNESS,
+                    format = { "${(it * 100).roundToInt()}%" },
+                    onCommit = viewModel::setStackBrightnessLevel,
                     enabled = settings.stackBrightnessEnabled,
-                    onChanged = viewModel::setStackBrightnessLevel,
                 )
 
                 SubsectionTitle(strings.sectionCardShape)
-                StepperRow(
+                SettingSlider(
                     label = strings.cardCornerRadius,
-                    value = "${settings.cardCornerRadiusDp}",
-                    onDecrement = {
-                        viewModel.setCardCornerRadiusDp(
-                            (settings.cardCornerRadiusDp - 1).coerceAtLeast(CullectSettings.MIN_CARD_CORNER_RADIUS_DP),
-                        )
-                    },
-                    onIncrement = {
-                        viewModel.setCardCornerRadiusDp(
-                            (settings.cardCornerRadiusDp + 1).coerceAtMost(CullectSettings.MAX_CARD_CORNER_RADIUS_DP),
-                        )
-                    },
+                    value = settings.cardCornerRadiusDp.toFloat(),
+                    valueRange = CullectSettings.MIN_CARD_CORNER_RADIUS_DP.toFloat()..CullectSettings.MAX_CARD_CORNER_RADIUS_DP.toFloat(),
+                    format = { it.roundToInt().toString() },
+                    onCommit = { viewModel.setCardCornerRadiusDp(it.roundToInt()) },
                 )
-                StepperRow(
+                SettingSlider(
                     label = strings.cardBorderWidth,
-                    value = "%.1f".format(settings.cardBorderWidthDp),
-                    onDecrement = {
-                        viewModel.setCardBorderWidthDp(
-                            (settings.cardBorderWidthDp - 0.5f).coerceAtLeast(CullectSettings.MIN_CARD_BORDER_WIDTH_DP),
-                        )
-                    },
-                    onIncrement = {
-                        viewModel.setCardBorderWidthDp(
-                            (settings.cardBorderWidthDp + 0.5f).coerceAtMost(CullectSettings.MAX_CARD_BORDER_WIDTH_DP),
-                        )
-                    },
+                    value = settings.cardBorderWidthDp,
+                    valueRange = CullectSettings.MIN_CARD_BORDER_WIDTH_DP..CullectSettings.MAX_CARD_BORDER_WIDTH_DP,
+                    format = { "%.1f".format((it * 2).roundToInt() / 2f) },
+                    onCommit = { viewModel.setCardBorderWidthDp((it * 2).roundToInt() / 2f) },
                 )
             }
         }
@@ -315,10 +313,15 @@ private fun SegmentedLabel(text: String) {
 
 @Composable
 private fun SectionTitle(text: String) {
+    // Small caps with wide tracking and bold weight: reads as a heading for the card, not as one more
+    // row of the same size.
     Text(
-        text,
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.padding(bottom = 12.dp),
+        text.uppercase(),
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.2.sp,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(bottom = 8.dp),
     )
 }
 
@@ -355,6 +358,7 @@ private fun ThemeModeSelector(strings: AppStrings, current: ThemeMode, onSelecte
                 onClick = { onSelected(mode) },
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 icon = {},
+                colors = cullectSegmentedColors(),
             ) {
                 SegmentedLabel(mode.label(strings))
             }
@@ -373,6 +377,7 @@ private fun LanguageModeSelector(strings: AppStrings, current: LanguageMode, onS
                 onClick = { onSelected(mode) },
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 icon = {},
+                colors = cullectSegmentedColors(),
             ) {
                 SegmentedLabel(mode.label(strings))
             }
@@ -394,6 +399,7 @@ private fun SortOrderSelector(strings: AppStrings, current: SortOrder, onSelecte
                 onClick = { onSelected(order) },
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 icon = {},
+                colors = cullectSegmentedColors(),
             ) {
                 SegmentedLabel(label)
             }
@@ -486,7 +492,7 @@ private fun PresetDescription(strings: AppStrings, preset: SwipeGesturePreset?) 
     Text(
         description,
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.secondary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(bottom = 12.dp),
     )
 }
@@ -506,6 +512,7 @@ private fun CardAnimationStyleSelector(
                 onClick = { onSelected(style) },
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 icon = {},
+                colors = cullectSegmentedColors(),
             ) {
                 SegmentedLabel(style.label(strings))
             }
@@ -513,73 +520,31 @@ private fun CardAnimationStyleSelector(
     }
 }
 
-/** Plain number, no unit shown — the value is a dp amount internally, but that's an implementation
- *  detail nobody adjusting a slider needs to see. */
+/** One slider row for every numeric setting: label and live value on top, the slider below. The value
+ *  is held in local state while dragging and handed to [onCommit] once, on release, so a DataStore
+ *  write isn't made for every pixel of drag; [onCommit] does any rounding (whole dp, half steps...). */
 @Composable
-private fun EdgePaddingSlider(strings: AppStrings, currentDp: Int, onChanged: (Int) -> Unit) {
-    var dragging by remember(currentDp) { mutableStateOf(currentDp.toFloat()) }
-    Column(modifier = Modifier.padding(top = 12.dp)) {
+private fun SettingSlider(
+    label: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    format: (Float) -> String,
+    onCommit: (Float) -> Unit,
+    enabled: Boolean = true,
+) {
+    var dragging by remember(value) { mutableStateOf(value) }
+    Column(modifier = Modifier.padding(top = 12.dp).alpha(if (enabled) 1f else 0.4f)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(strings.edgePadding, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Text("${dragging.roundToInt()}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
-        }
-        // Continuous (no tick marks, like the brightness slider): the value is rounded to whole dp
-        // only for display and when it's saved on release.
-        CullectSlider(
-            value = dragging,
-            onValueChange = { dragging = it },
-            onValueChangeFinished = { onChanged(dragging.roundToInt()) },
-            valueRange = CullectSettings.MIN_EDGE_PADDING_DP.toFloat()..CullectSettings.MAX_EDGE_PADDING_DP.toFloat(),
-        )
-    }
-}
-
-/** Held in local state while dragging and written once on release: unlike the padding slider this
- *  is continuous, and a DataStore write per pixel of drag is pointless — nothing on this screen
- *  changes brightness anyway, it only applies later in the swipe stack. */
-@Composable
-private fun StackBrightnessSlider(strings: AppStrings, level: Float, enabled: Boolean, onChanged: (Float) -> Unit) {
-    var dragging by remember(level) { mutableStateOf(level) }
-    Column(modifier = Modifier.padding(top = 8.dp).alpha(if (enabled) 1f else 0.4f)) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(strings.stackBrightnessLevel, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Text(
-                "${(dragging * 100).roundToInt()}%",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary,
-            )
+            Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(format(dragging), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
         }
         CullectSlider(
             value = dragging,
             onValueChange = { dragging = it },
-            onValueChangeFinished = { onChanged(dragging) },
+            onValueChangeFinished = { onCommit(dragging) },
             enabled = enabled,
-            valueRange = CullectSettings.MIN_STACK_BRIGHTNESS..CullectSettings.MAX_STACK_BRIGHTNESS,
+            valueRange = valueRange,
         )
-    }
-}
-
-/** A stepper rather than a slider: both ranges are small (8-40, 0-4), so a tap per step is more
- *  precise than dragging. */
-@Composable
-private fun StepperRow(label: String, value: String, onDecrement: () -> Unit, onIncrement: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        IconButton(onClick = onDecrement) {
-            Icon(Icons.Filled.Remove, contentDescription = null)
-        }
-        Text(
-            value,
-            modifier = Modifier.width(40.dp),
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        IconButton(onClick = onIncrement) {
-            Icon(Icons.Filled.Add, contentDescription = null)
-        }
     }
 }
 
@@ -598,6 +563,7 @@ private fun GesturePresetRow(
                 onClick = { onPresetSelected(preset) },
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                 icon = {},
+                colors = cullectSegmentedColors(),
             ) {
                 SegmentedLabel(preset.label(strings))
             }
@@ -605,10 +571,9 @@ private fun GesturePresetRow(
     }
 }
 
-/** A label + value row (e.g. "Swipe right" -> "Delete") that must survive arbitrarily long
- *  translations without wrapping character-by-character or overlapping the next row: giving both
- *  texts an equal weight bounds each to its own half of the row's width, so `maxLines = 1` +
- *  `TextOverflow.Ellipsis` actually has room to take effect. */
+/** A label + value row (e.g. "Swipe right" -> "Delete") that must survive long translations without
+ *  overlapping the next row: the value is capped at 170dp (two lines) and ellipsized, the label gets the rest of
+ *  the width and can wrap to two lines. */
 @Composable
 private fun LabelValueRow(
     label: String,
@@ -624,22 +589,24 @@ private fun LabelValueRow(
             .alpha(if (enabled) 1f else 0.4f),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // The label takes whatever the value doesn't need and may wrap to a second line, instead of
+        // both getting half the row and each being cut off ("Clear thumbna...").
         Text(
             label,
             style = MaterialTheme.typography.bodyLarge,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(12.dp))
         Text(
             value,
             style = MaterialTheme.typography.bodyMedium,
             color = valueColor,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.End,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.widthIn(max = 170.dp),
         )
     }
 }
@@ -934,7 +901,7 @@ private fun SwitchRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             subtitle?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)

@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.cullect.app.data.media.MediaGroup
 import com.cullect.app.data.media.PeriodFilter
+import com.cullect.app.ui.components.cullectFilterChipColors
 import com.cullect.app.ui.components.MediaThumbnail
 import com.cullect.app.ui.components.rememberAllowThumbnailDecode
 import com.cullect.app.ui.strings.AppStrings
@@ -173,6 +174,7 @@ private fun PeriodFilterRow(strings: AppStrings, selected: PeriodFilter, onSelec
                 selected = filter == selected,
                 onClick = { onSelected(filter) },
                 label = { Text(label) },
+                colors = cullectFilterChipColors(),
             )
         }
     }
