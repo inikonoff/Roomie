@@ -67,14 +67,18 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
 
     /** Restores several entries at once through the same [TrashRepository.restoreFromTrash] call
      *  [restore] uses for one — backs both multi-select and "restore all". */
-    fun restoreMany(entryIds: Set<String>) {
+    fun restoreMany(entryIds: Set<String>, showProgress: Boolean = false) {
         if (_restoreProgress.value != null) return
         val toRestore = entries.value.filter { it.stableId in entryIds }
         if (toRestore.isEmpty()) return
-        _restoreProgress.value = 0 to toRestore.size
+        // The progress bar is only for "restore all": a single tile or a hand-picked few finish
+        // before a bar would be readable, and flashing one on every tap is just noise.
+        if (showProgress) _restoreProgress.value = 0 to toRestore.size
         viewModelScope.launch {
             try {
-                trashRepository.restoreFromTrash(toRestore) { done, total -> _restoreProgress.value = done to total }
+                trashRepository.restoreFromTrash(toRestore) { done, total ->
+                    if (showProgress) _restoreProgress.value = done to total
+                }
                 _restoredEvents.tryEmit(toRestore.size)
             } finally {
                 _restoreProgress.value = null
