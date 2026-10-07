@@ -41,7 +41,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -72,6 +71,7 @@ import com.cullect.app.data.settings.CullectSettings
 import com.cullect.app.data.settings.SwipeCardAction
 import com.cullect.app.data.settings.ThemeMode
 import com.cullect.app.ui.screens.swipe.SwipeDirection
+import com.cullect.app.ui.components.CullectSlider
 import com.cullect.app.ui.strings.AppStrings
 import com.cullect.app.ui.strings.LocalAppStrings
 import com.cullect.app.ui.theme.ContainerShape
@@ -503,7 +503,7 @@ private fun EdgePaddingSlider(strings: AppStrings, currentDp: Int, onChanged: (I
         }
         // Continuous (no tick marks, like the brightness slider): the value is rounded to whole dp
         // only for display and when it's saved on release.
-        Slider(
+        CullectSlider(
             value = dragging,
             onValueChange = { dragging = it },
             onValueChangeFinished = { onChanged(dragging.roundToInt()) },
@@ -527,7 +527,7 @@ private fun StackBrightnessSlider(strings: AppStrings, level: Float, enabled: Bo
                 color = MaterialTheme.colorScheme.secondary,
             )
         }
-        Slider(
+        CullectSlider(
             value = dragging,
             onValueChange = { dragging = it },
             onValueChangeFinished = { onChanged(dragging) },
