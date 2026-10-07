@@ -3,6 +3,7 @@ package com.cullect.app.ui.screens.settings
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.cullect.app.util.relativePathForNewFolder
 import com.cullect.app.data.media.GalleryFolder
 import com.cullect.app.data.media.MediaRepository
 import com.cullect.app.data.media.SortOrder
@@ -88,6 +89,20 @@ class SettingsViewModel(
 
     fun setMoveToFolder(folder: GalleryFolder) {
         viewModelScope.launch { settingsRepository.setMoveToFolder(folder.bucketId, folder.displayName) }
+    }
+
+    /** Makes [name] inside DCIM the move destination. A folder already there is simply selected; a
+     *  new one is only remembered by path, since Android creates it with the first file moved in. */
+    fun createMoveToFolder(name: String) {
+        viewModelScope.launch {
+            val path = relativePathForNewFolder(name)
+            val existing = mediaRepository.findBucketIdByRelativePath(path)
+            if (existing != null) {
+                settingsRepository.setMoveToFolder(existing, name)
+            } else {
+                settingsRepository.setMoveToNewFolder(path, name)
+            }
+        }
     }
 
     fun setThemeMode(mode: ThemeMode) {

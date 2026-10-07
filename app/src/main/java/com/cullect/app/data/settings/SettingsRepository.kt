@@ -35,6 +35,7 @@ class SettingsRepository(private val context: Context) {
         val SWIPE_DOWN_ACTION = stringPreferencesKey("swipe_down_action")
         val MOVE_TO_FOLDER_BUCKET_ID = longPreferencesKey("move_to_folder_bucket_id")
         val MOVE_TO_FOLDER_NAME = stringPreferencesKey("move_to_folder_name")
+        val MOVE_TO_FOLDER_PATH = stringPreferencesKey("move_to_folder_path")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val CARD_ANIMATION_STYLE = stringPreferencesKey("card_animation_style")
         val LANGUAGE_MODE = stringPreferencesKey("language_mode")
@@ -64,6 +65,7 @@ class SettingsRepository(private val context: Context) {
                 ?: defaults.swipeDownAction,
             moveToFolderBucketId = prefs[Keys.MOVE_TO_FOLDER_BUCKET_ID],
             moveToFolderName = prefs[Keys.MOVE_TO_FOLDER_NAME],
+            moveToFolderRelativePath = prefs[Keys.MOVE_TO_FOLDER_PATH],
             themeMode = prefs[Keys.THEME_MODE]?.let { ThemeMode.valueOf(it) } ?: defaults.themeMode,
             cardAnimationStyle = prefs[Keys.CARD_ANIMATION_STYLE]?.let { CardAnimationStyle.valueOf(it) }
                 ?: defaults.cardAnimationStyle,
@@ -152,7 +154,22 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit {
             it[Keys.MOVE_TO_FOLDER_BUCKET_ID] = bucketId
             it[Keys.MOVE_TO_FOLDER_NAME] = name
+            it.remove(Keys.MOVE_TO_FOLDER_PATH)
         }
+    }
+
+    /** A folder that doesn't exist yet: only its path is known until the first file is moved in. */
+    suspend fun setMoveToNewFolder(relativePath: String, name: String) {
+        context.dataStore.edit {
+            it.remove(Keys.MOVE_TO_FOLDER_BUCKET_ID)
+            it[Keys.MOVE_TO_FOLDER_NAME] = name
+            it[Keys.MOVE_TO_FOLDER_PATH] = relativePath
+        }
+    }
+
+    /** Records the bucket a [setMoveToNewFolder] folder turned into once it got its first file. */
+    suspend fun setMoveToFolderBucketId(bucketId: Long) {
+        context.dataStore.edit { it[Keys.MOVE_TO_FOLDER_BUCKET_ID] = bucketId }
     }
 
     suspend fun setThemeMode(mode: ThemeMode) {

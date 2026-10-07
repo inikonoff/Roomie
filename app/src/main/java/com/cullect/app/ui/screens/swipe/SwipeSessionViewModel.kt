@@ -325,7 +325,10 @@ class SwipeSessionViewModel(
         // Moving needs somewhere to move to. Rejecting here — before touching the stack or undo
         // history at all — instead of letting requestMove's own null check swallow it silently
         // used to mean the card was already gone from the session with nothing having happened.
-        if (action == SwipeCardAction.MOVE_TO_FOLDER && currentSettings.moveToFolderBucketId == null) {
+        if (action == SwipeCardAction.MOVE_TO_FOLDER &&
+            currentSettings.moveToFolderBucketId == null &&
+            currentSettings.moveToFolderRelativePath == null
+        ) {
             viewModelScope.launch { _moveTargetMissingEvents.emit(Unit) }
             return false
         }
@@ -441,14 +444,17 @@ class SwipeSessionViewModel(
      */
     private fun requestMove(group: MediaGroup) {
         val job = viewModelScope.launch {
-            val bucketId = currentSettings.moveToFolderBucketId ?: return@launch
-            val targetPath = mediaRepository.getRelativePathForBucket(bucketId) ?: return@launch
+            // A folder created in Settings is known by path (it may not exist yet); a picked one by bucket.
+            val targetPath = currentSettings.moveToFolderRelativePath
+                ?: currentSettings.moveToFolderBucketId?.let { mediaRepository.getRelativePathForBucket(it) }
+                ?: return@launch
             val intentSender = mediaRepository.buildMoveRequest(group.allUris)
             if (intentSender != null) {
                 _moveConfirmationEvents.emit(MoveConfirmationRequest(intentSender, group, targetPath))
             } else {
                 mediaRepository.applyMove(group.allUris, targetPath)
                 completedMoveKeys += group.key
+                resolveNewFolderBucket(targetPath)
             }
         }
         pendingMoveJobs[group.key] = job
@@ -460,7 +466,16 @@ class SwipeSessionViewModel(
         viewModelScope.launch {
             mediaRepository.applyMove(request.group.allUris, request.targetRelativePath)
             completedMoveKeys += request.group.key
+            resolveNewFolderBucket(request.targetRelativePath)
         }
+    }
+
+    /** Once the first file has landed in a folder created in Settings, it exists as a normal gallery
+     *  folder: remember its bucket so Settings stops calling it "will be created". */
+    private suspend fun resolveNewFolderBucket(movedToPath: String) {
+        val settings = currentSettings
+        if (settings.moveToFolderBucketId != null || settings.moveToFolderRelativePath != movedToPath) return
+        mediaRepository.findBucketIdByRelativePath(movedToPath)?.let { settingsRepository.setMoveToFolderBucketId(it) }
     }
 
     /** Builds the end-of-session summary from what actually happened this pass over the folder —

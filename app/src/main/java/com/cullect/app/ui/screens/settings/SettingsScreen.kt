@@ -1,5 +1,6 @@
 package com.cullect.app.ui.screens.settings
 
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -37,6 +38,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -75,7 +77,9 @@ import com.cullect.app.ui.components.CullectSlider
 import com.cullect.app.ui.strings.AppStrings
 import com.cullect.app.ui.strings.LocalAppStrings
 import com.cullect.app.ui.theme.ContainerShape
+import com.cullect.app.util.NEW_FOLDER_PARENT
 import com.cullect.app.util.formatBytes
+import com.cullect.app.util.validFolderNameOrNull
 import com.cullect.app.ui.theme.DeleteContainer
 import com.cullect.app.ui.theme.FolderAction
 import com.cullect.app.ui.theme.FolderContainer
@@ -182,7 +186,15 @@ fun SettingsScreen(
                     viewModel::setSwipeDownAction,
                     excludedActions = upDownExcluded,
                 )
-                MoveToFolderRow(strings, settings.moveToFolderName, folders, viewModel::setMoveToFolder)
+                MoveToFolderRow(
+                    strings = strings,
+                    currentName = settings.moveToFolderName,
+                    // A folder made in Settings isn't a real gallery folder until its first file lands.
+                    pendingCreation = settings.moveToFolderBucketId == null && settings.moveToFolderRelativePath != null,
+                    folders = folders,
+                    onSelected = viewModel::setMoveToFolder,
+                    onCreate = viewModel::createMoveToFolder,
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -737,10 +749,13 @@ private fun ActionChip(text: String, chipColor: Color, containerColor: Color, mo
 private fun MoveToFolderRow(
     strings: AppStrings,
     currentName: String?,
+    pendingCreation: Boolean,
     folders: List<GalleryFolder>,
     onSelected: (GalleryFolder) -> Unit,
+    onCreate: (String) -> Unit,
 ) {
     var showDialog by remember { mutableStateOf(false) }
+    var showNewFolder by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -749,7 +764,7 @@ private fun MoveToFolderRow(
     ) {
         LabelValueRow(
             label = strings.moveToFolderDestination,
-            value = currentName ?: strings.notSet,
+            value = currentName?.let { if (pendingCreation) it + strings.folderWillBeCreated else it } ?: strings.notSet,
             modifier = Modifier.weight(1f),
         )
         ChevronIcon()
@@ -784,8 +799,71 @@ private fun MoveToFolderRow(
             confirmButton = {
                 TextButton(onClick = { showDialog = false }) { Text(strings.cancel) }
             },
+            // Creating needs RELATIVE_PATH (Android 10+), the same requirement "Move to folder" has.
+            dismissButton = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    TextButton(
+                        onClick = {
+                            showDialog = false
+                            showNewFolder = true
+                        },
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = strings.newFolder)
+                    }
+                }
+            },
         )
     }
+
+    if (showNewFolder) {
+        NewFolderDialog(
+            strings = strings,
+            onDismiss = { showNewFolder = false },
+            onCreate = { name ->
+                onCreate(name)
+                showNewFolder = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun NewFolderDialog(strings: AppStrings, onDismiss: () -> Unit, onCreate: (String) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    val valid = validFolderNameOrNull(name)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(strings.newFolder) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(strings.newFolderName) },
+                    prefix = { Text("$NEW_FOLDER_PARENT/") },
+                    singleLine = true,
+                    isError = name.isNotEmpty() && valid == null,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    if (name.isNotEmpty() && valid == null) strings.newFolderInvalidName else strings.newFolderInParent,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (name.isNotEmpty() && valid == null) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { valid?.let(onCreate) }, enabled = valid != null) { Text(strings.createAction) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(strings.cancel) }
+        },
+    )
 }
 
 @Composable

@@ -16,6 +16,10 @@ data class CullectSettings(
     /** Destination for [SwipeCardAction.MOVE_TO_FOLDER]; null until the user picks one in Settings. */
     val moveToFolderBucketId: Long? = null,
     val moveToFolderName: String? = null,
+    /** Set for a folder the user created in Settings: it may not exist yet (Android only creates a
+     *  folder when the first file lands in it), so the destination is a path, not a bucket. When
+     *  set it wins over [moveToFolderBucketId]. */
+    val moveToFolderRelativePath: String? = null,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val cardAnimationStyle: CardAnimationStyle = CardAnimationStyle.CLASSIC,
     val languageMode: LanguageMode = LanguageMode.SYSTEM,

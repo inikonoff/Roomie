@@ -102,6 +102,12 @@ interface AppStrings {
     val moveToFolderDestination: String
     val notSet: String
     val chooseAFolder: String
+    val newFolder: String
+    val newFolderName: String
+    val newFolderInParent: String
+    val newFolderInvalidName: String
+    val createAction: String
+    val folderWillBeCreated: String
     val noFoldersFoundYet: String
     val cancel: String
     val clearThumbnailCache: String
@@ -232,6 +238,12 @@ object EnglishStrings : AppStrings {
     override val moveToFolderDestination = "\"Move to folder\" destination"
     override val notSet = "Not set"
     override val chooseAFolder = "Choose a folder"
+    override val newFolder = "New folder"
+    override val newFolderName = "Folder name"
+    override val newFolderInParent = "Created inside DCIM (photos and videos both go there)"
+    override val newFolderInvalidName = "Use up to 50 characters, without / \\ : * ? \" < > | and not starting with a dot."
+    override val createAction = "Create"
+    override val folderWillBeCreated = " (will be created)"
     override val noFoldersFoundYet = "No folders found yet."
     override val cancel = "Cancel"
     override val clearThumbnailCache = "Clear thumbnail cache"
@@ -360,6 +372,12 @@ object RussianStrings : AppStrings {
     override val moveToFolderDestination = "Папка для «Переместить в папку»"
     override val notSet = "Не задано"
     override val chooseAFolder = "Выберите папку"
+    override val newFolder = "Новая папка"
+    override val newFolderName = "Название папки"
+    override val newFolderInParent = "Создаётся внутри DCIM (туда же уйдут и фото, и видео)"
+    override val newFolderInvalidName = "До 50 символов, без / \\ : * ? \" < > | и не с точки."
+    override val createAction = "Создать"
+    override val folderWillBeCreated = " (будет создана)"
     override val noFoldersFoundYet = "Папки пока не найдены."
     override val cancel = "Отмена"
     override val clearThumbnailCache = "Очистить кэш превью"

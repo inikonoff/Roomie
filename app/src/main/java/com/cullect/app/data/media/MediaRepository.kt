@@ -74,6 +74,21 @@ class MediaRepository(private val context: Context) {
             ?: queryRelativePath(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, MediaStore.Video.Media.BUCKET_ID, bucketId)
     }
 
+    /** The bucket of the folder at exactly [relativePath] (e.g. `DCIM/Keep/`), or null if no photo or
+     *  video lives there yet. */
+    suspend fun findBucketIdByRelativePath(relativePath: String): Long? = withContext(Dispatchers.IO) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return@withContext null
+        queryBucketId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, MediaStore.Images.Media.BUCKET_ID, relativePath)
+            ?: queryBucketId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, MediaStore.Video.Media.BUCKET_ID, relativePath)
+    }
+
+    private fun queryBucketId(collection: Uri, bucketColumn: String, relativePath: String): Long? {
+        val projection = arrayOf(bucketColumn)
+        resolver.query(collection, projection, "${MediaStore.MediaColumns.RELATIVE_PATH} = ?", arrayOf(relativePath), null)
+            ?.use { cursor -> if (cursor.moveToFirst()) return cursor.getLong(0) }
+        return null
+    }
+
     private fun queryRelativePath(collection: Uri, bucketColumn: String, bucketId: Long): String? {
         val projection = arrayOf(MediaStore.MediaColumns.RELATIVE_PATH)
         resolver.query(collection, projection, "$bucketColumn = ?", arrayOf(bucketId.toString()), null)?.use { cursor ->
