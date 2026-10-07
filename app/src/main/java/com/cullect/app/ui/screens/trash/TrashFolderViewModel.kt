@@ -63,23 +63,23 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
     private val _restoredEvents = MutableSharedFlow<Int>(extraBufferCapacity = 1)
     val restoredEvents: SharedFlow<Int> = _restoredEvents
 
-    fun restore(entry: TrashEntry) = restoreMany(setOf(entry.stableId))
+    /** One tile: no progress bar and no toast — the tile disappearing from the grid is the feedback. */
+    fun restore(entry: TrashEntry) = restoreMany(setOf(entry.stableId), showProgress = false, announce = false)
 
     /** Restores several entries at once through the same [TrashRepository.restoreFromTrash] call
      *  [restore] uses for one — backs both multi-select and "restore all". */
-    fun restoreMany(entryIds: Set<String>, showProgress: Boolean = false) {
+    fun restoreMany(entryIds: Set<String>, showProgress: Boolean = true, announce: Boolean = true) {
         if (_restoreProgress.value != null) return
         val toRestore = entries.value.filter { it.stableId in entryIds }
         if (toRestore.isEmpty()) return
-        // The progress bar is only for "restore all": a single tile or a hand-picked few finish
-        // before a bar would be readable, and flashing one on every tap is just noise.
+        // A single tile skips the progress bar and the toast (see [restore]); several files get both.
         if (showProgress) _restoreProgress.value = 0 to toRestore.size
         viewModelScope.launch {
             try {
                 trashRepository.restoreFromTrash(toRestore) { done, total ->
                     if (showProgress) _restoreProgress.value = done to total
                 }
-                _restoredEvents.tryEmit(toRestore.size)
+                if (announce) _restoredEvents.tryEmit(toRestore.size)
             } finally {
                 _restoreProgress.value = null
             }

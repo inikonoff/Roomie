@@ -211,7 +211,7 @@ fun TrashFolderScreen(
                         // No confirmation: restoring is reversible (swipe it away again), unlike
                         // "empty trash" next to it.
                         IconButton(
-                            onClick = { viewModel.restoreMany(entries.mapTo(HashSet()) { it.stableId }, showProgress = true) },
+                            onClick = { viewModel.restoreMany(entries.mapTo(HashSet()) { it.stableId }) },
                             enabled = !busy,
                         ) {
                             Icon(Icons.Filled.RestoreFromTrash, contentDescription = strings.restoreAll)
