@@ -133,11 +133,6 @@ class SwipeSessionViewModel(
     private val _moveTargetMissingEvents = MutableSharedFlow<Unit>()
     val moveTargetMissingEvents: SharedFlow<Unit> = _moveTargetMissingEvents
 
-    /** Fired once a swipe has actually been committed (after it landed in the undo history), so
-     *  SwipeScreen can offer a quick "Undo" toast. Not fired for a browse-back or a rejected swipe. */
-    private val _swipeCommittedEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    val swipeCommittedEvents: SharedFlow<Unit> = _swipeCommittedEvents
-
     private val undoHistory = ArrayDeque<SwipeAction>(MAX_UNDO_HISTORY)
 
     /** Cards passed with a "do nothing" (browsing) swipe, so a left-swipe-to-go-back has something
@@ -375,7 +370,6 @@ class SwipeSessionViewModel(
 
         pendingSwipeIncrement++
         if (pendingSwipeIncrement >= SWIPE_COUNT_FLUSH_INTERVAL) flushSwipeCount()
-        _swipeCommittedEvents.tryEmit(Unit)
         return true
     }
 

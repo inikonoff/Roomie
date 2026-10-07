@@ -41,9 +41,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -90,7 +88,6 @@ import com.cullect.app.ui.strings.LocalAppStrings
 import com.cullect.app.ui.theme.SwipeLeftDelete
 import com.cullect.app.ui.theme.SwipePostpone
 import com.cullect.app.ui.theme.SwipeRightKeep
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.PI
@@ -129,19 +126,6 @@ fun SwipeScreen(
     LaunchedEffect(viewModel) {
         viewModel.browseHistoryExhaustedEvents.collect {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-        }
-    }
-
-    // collectLatest: a new swipe replaces the previous toast instead of queueing behind it, so the
-    // toast's Undo always reverts the swipe that was just made, never an older one.
-    LaunchedEffect(viewModel) {
-        viewModel.swipeCommittedEvents.collectLatest {
-            val result = snackbarHostState.showSnackbar(
-                message = strings.undoToastMessage,
-                actionLabel = strings.undo,
-                duration = SnackbarDuration.Short,
-            )
-            if (result == SnackbarResult.ActionPerformed) viewModel.undo()
         }
     }
 
