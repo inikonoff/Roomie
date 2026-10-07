@@ -48,7 +48,7 @@ class FolderGridViewModel(
     fun load(bucketId: Long?, displayName: String) {
         val key = "$bucketId|$displayName"
         viewModelScope.launch {
-            val currentTrashedIds = trashRepository.getTrashedStableIds()
+            val currentTrashedIds = trashRepository.getHiddenStableIds()
             if (key == loadedKey && currentTrashedIds == loadedTrashedIds) return@launch
             loadedKey = key
             loadedTrashedIds = currentTrashedIds
@@ -63,7 +63,7 @@ class FolderGridViewModel(
     fun onPeriodSelected(bucketId: Long?, period: PeriodFilter) {
         viewModelScope.launch {
             settingsRepository.setFolderPeriodFilter(bucketId, period)
-            loadedTrashedIds = trashRepository.getTrashedStableIds()
+            loadedTrashedIds = trashRepository.getHiddenStableIds()
             loadWithPeriod(bucketId, period, loadedTrashedIds)
         }
     }

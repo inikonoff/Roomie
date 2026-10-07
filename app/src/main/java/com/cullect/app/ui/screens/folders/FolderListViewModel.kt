@@ -67,7 +67,7 @@ class FolderListViewModel(
         val firstLoad = state.folders.isEmpty()
         viewModelScope.launch {
             _uiState.update { if (firstLoad) it.copy(isLoading = true) else it.copy(isRefreshing = true) }
-            val trashedIds = trashRepository.getTrashedStableIds()
+            val trashedIds = trashRepository.getHiddenStableIds()
             val folders = mediaRepository.getFolders(trashedIds)
             _uiState.update { it.copy(folders = folders, isLoading = false, isRefreshing = false) }
             isFetching = false

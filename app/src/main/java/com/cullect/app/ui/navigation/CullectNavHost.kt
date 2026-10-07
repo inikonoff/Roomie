@@ -87,6 +87,9 @@ fun CullectNavHost(viewModelFactory: ViewModelFactory) {
         pendingMoveRequest = null
         if (request != null && result.resultCode == Activity.RESULT_OK) {
             swipeSessionViewModel.onMoveConfirmed(request)
+        } else {
+            // Declined, or the request was lost (e.g. the screen was recreated while it was up).
+            swipeSessionViewModel.onMoveCancelled(request)
         }
     }
 
@@ -96,6 +99,11 @@ fun CullectNavHost(viewModelFactory: ViewModelFactory) {
             moveIntentSenderLauncher.launch(IntentSenderRequest.Builder(request.intentSender).build())
         }
     }
+
+    // A queue left over from a run that was killed before the user confirmed it: ask now, instead of
+    // leaving those files hidden from their folders. (Declared after the collector above so the
+    // request can't be emitted before anyone is listening.)
+    LaunchedEffect(swipeSessionViewModel) { swipeSessionViewModel.flushPendingMoves() }
 
     NavHost(navController = navController, startDestination = Routes.FOLDERS) {
         composable(Routes.FOLDERS) {
@@ -175,6 +183,8 @@ fun CullectNavHost(viewModelFactory: ViewModelFactory) {
             // is handed back is where the user was, so the grid lands on that photo instead of the
             // top of the folder. Covers the system back gesture/button too, not just the arrow.
             val leaveStack = {
+                // Moves swiped in this session are confirmed together now, in one dialog.
+                swipeSessionViewModel.flushPendingMoves()
                 swipeSessionViewModel.currentStableId()?.let { stableId ->
                     navController.previousBackStackEntry?.savedStateHandle?.set(Routes.SCROLL_TO_KEY, stableId)
                 }
@@ -189,6 +199,7 @@ fun CullectNavHost(viewModelFactory: ViewModelFactory) {
                 startAtStableId = startAtStableId,
                 onBack = { leaveStack() },
                 onStackExhausted = {
+                    swipeSessionViewModel.flushPendingMoves()
                     swipeSessionViewModel.prepareSessionSummary()
                     navController.navigate(Routes.SUMMARY) { popUpTo(Routes.FOLDERS) }
                 },

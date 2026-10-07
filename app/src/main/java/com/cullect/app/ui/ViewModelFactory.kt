@@ -26,6 +26,7 @@ class ViewModelFactory(private val container: AppContainer) : ViewModelProvider.
                 mediaRepository = container.mediaRepository,
                 trashRepository = container.trashRepository,
                 settingsRepository = container.settingsRepository,
+                pendingMoveStore = container.pendingMoveStore,
                 monetizationGateway = container.monetizationGateway,
             ) as T
 

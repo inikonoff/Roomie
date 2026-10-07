@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import com.cullect.app.data.db.TrashDao
 import com.cullect.app.data.db.TrashEntry
 import com.cullect.app.data.media.MediaGroup
+import com.cullect.app.data.media.PendingMoveStore
 import com.cullect.app.data.media.MediaItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +31,7 @@ import java.util.concurrent.TimeUnit
 class TrashRepository(
     private val context: Context,
     private val trashDao: TrashDao,
+    private val pendingMoveStore: PendingMoveStore,
 ) {
     private val resolver get() = context.contentResolver
 
@@ -49,8 +51,10 @@ class TrashRepository(
     /** Every stable id currently sitting in the trash, so a folder/grid query can exclude them —
      *  a swiped-away photo is still physically on disk (see class doc) and would otherwise keep
      *  showing up in normal browsing. */
-    suspend fun getTrashedStableIds(): Set<String> = withContext(Dispatchers.IO) {
-        trashDao.getAllStableIds().toSet()
+    suspend fun getHiddenStableIds(): Set<String> = withContext(Dispatchers.IO) {
+        // Also everything swiped into "move to folder" that hasn't been carried out yet — it is
+        // still in its old folder on disk, but for the user it has already gone.
+        trashDao.getAllStableIds().toSet() + pendingMoveStore.getStableIds()
     }
 
     /** Live count of everything currently sitting in the trash, independent of any particular

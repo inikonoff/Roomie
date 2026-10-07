@@ -1,6 +1,11 @@
 package com.cullect.app.ui.screens.settings
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.MediaStore
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -49,6 +54,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -62,9 +68,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.cullect.app.data.media.GalleryFolder
 import com.cullect.app.data.media.SortOrder
 import com.cullect.app.data.settings.CardAnimationStyle
@@ -195,6 +204,7 @@ fun SettingsScreen(
                     onSelected = viewModel::setMoveToFolder,
                     onCreate = viewModel::createMoveToFolder,
                 )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) ManageMediaRow(strings)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -823,6 +833,50 @@ private fun MoveToFolderRow(
                 onCreate(name)
                 showNewFolder = false
             },
+        )
+    }
+}
+
+/** Opens the system "Media management apps" screen for Cullect (Android 12+). While it's on, a move
+ *  needs no confirmation dialog at all; the row's state is re-read whenever the user comes back. */
+@Composable
+private fun ManageMediaRow(strings: AppStrings) {
+    val context = LocalContext.current
+    var allowed by remember { mutableStateOf(MediaStore.canManageMedia(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) allowed = MediaStore.canManageMedia(context)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                val uri = Uri.parse("package:${context.packageName}")
+                try {
+                    context.startActivity(Intent(Settings.ACTION_REQUEST_MANAGE_MEDIA, uri))
+                } catch (_: ActivityNotFoundException) {
+                    context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri))
+                }
+            }
+            .padding(top = 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(strings.manageMediaTitle, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(
+                if (allowed) strings.manageMediaOn else strings.manageMediaOff,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+            ChevronIcon()
+        }
+        Text(
+            strings.manageMediaHint,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

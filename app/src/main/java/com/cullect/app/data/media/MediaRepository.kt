@@ -114,15 +114,25 @@ class MediaRepository(private val context: Context) {
         }
     }
 
-    /** Moves [uris] into [targetRelativePath] by updating their MediaStore row; best-effort. */
-    suspend fun applyMove(uris: List<Uri>, targetRelativePath: String) = withContext(Dispatchers.IO) {
+    /** True when the user has allowed "media management" (Android 12+) in system settings: Cullect
+     *  may then move media without a confirmation dialog. */
+    fun canManageMedia(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && MediaStore.canManageMedia(context)
+
+    /** Whether moving needs the system's write-confirmation dialog: Android 11+ without the
+     *  media-management permission. Below 11 there is nothing to confirm. */
+    fun moveNeedsConfirmation(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !canManageMedia()
+
+    /** Moves [uris] into [targetRelativePath] by updating their MediaStore row; best-effort.
+     *  Returns the ones that did not move (denied, or gone in the meantime). */
+    suspend fun applyMove(uris: List<Uri>, targetRelativePath: String): List<Uri> = withContext(Dispatchers.IO) {
         val values = ContentValues().apply { put(MediaStore.MediaColumns.RELATIVE_PATH, targetRelativePath) }
-        uris.forEach { uri ->
+        uris.filterNot { uri ->
             try {
-                resolver.update(uri, values, null, null)
+                resolver.update(uri, values, null, null) > 0
             } catch (_: Exception) {
-                // Best-effort: a denied write request or a race with the file being deleted elsewhere
-                // just leaves that one item where it was.
+                false
             }
         }
     }

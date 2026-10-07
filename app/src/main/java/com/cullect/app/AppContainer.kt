@@ -3,6 +3,7 @@ package com.cullect.app
 import android.content.Context
 import com.cullect.app.data.db.CullectDatabase
 import com.cullect.app.data.media.MediaRepository
+import com.cullect.app.data.media.PendingMoveStore
 import com.cullect.app.data.monetization.MonetizationGateway
 import com.cullect.app.data.monetization.NoOpMonetizationGateway
 import com.cullect.app.data.settings.SettingsRepository
@@ -19,6 +20,7 @@ class AppContainer(context: Context) {
 
     val mediaRepository = MediaRepository(appContext)
     val settingsRepository = SettingsRepository(appContext)
-    val trashRepository = TrashRepository(appContext, database.trashDao())
+    val pendingMoveStore = PendingMoveStore(appContext)
+    val trashRepository = TrashRepository(appContext, database.trashDao(), pendingMoveStore)
     val monetizationGateway: MonetizationGateway = NoOpMonetizationGateway()
 }

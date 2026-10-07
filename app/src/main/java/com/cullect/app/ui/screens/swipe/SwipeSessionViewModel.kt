@@ -1,10 +1,14 @@
 package com.cullect.app.ui.screens.swipe
 
 import android.content.IntentSender
+import android.net.Uri
+import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cullect.app.data.media.MediaGroup
 import com.cullect.app.data.media.MediaRepository
+import com.cullect.app.data.media.PendingMove
+import com.cullect.app.data.media.PendingMoveStore
 import com.cullect.app.data.media.PeriodFilter
 import com.cullect.app.data.monetization.MonetizationGateway
 import com.cullect.app.data.monetization.PurchaseResult
@@ -30,6 +34,9 @@ import kotlinx.coroutines.launch
 enum class SwipeDirection { LEFT, RIGHT, UP, DOWN }
 
 private const val MAX_UNDO_HISTORY = 10
+
+/** How many queued moves are confirmed together without waiting for the stack to end. */
+private const val MOVE_BATCH_SIZE = 25
 
 /** How far Browse-back (a "do nothing" left-swipe) can rewind, independent of [MAX_UNDO_HISTORY] —
  *  undo/redo of an actual decision (delete/move) staying shallow is deliberate, but plain browsing
@@ -104,12 +111,18 @@ data class SwipeUiState(
 
 data class SummaryUiState(val itemCount: Int, val freedBytes: Long)
 
-data class MoveConfirmationRequest(val intentSender: IntentSender, val group: MediaGroup, val targetRelativePath: String)
+/** One system confirmation covering every queued file in [stableIds] headed for [targetRelativePath]. */
+data class MoveConfirmationRequest(
+    val intentSender: IntentSender,
+    val stableIds: Set<String>,
+    val targetRelativePath: String,
+)
 
 class SwipeSessionViewModel(
     private val mediaRepository: MediaRepository,
     private val trashRepository: TrashRepository,
     private val settingsRepository: SettingsRepository,
+    private val pendingMoveStore: PendingMoveStore,
     private val monetizationGateway: MonetizationGateway,
 ) : ViewModel() {
 
@@ -145,12 +158,13 @@ class SwipeSessionViewModel(
      *  limitation — see requestMove). */
     private val pendingMoveJobs = mutableMapOf<String, Job>()
 
-    /** Group keys whose move has actually finished — i.e. [MediaRepository.applyMove] returned —
-     *  as opposed to merely having no job left in [pendingMoveJobs], which (on API 30+) also
-     *  becomes true the instant the confirmation dialog is *requested*, well before the user has
-     *  answered it. [undo] checks this, not [pendingMoveJobs], to tell "nothing to cancel because
-     *  it's done" apart from "nothing to cancel because it hasn't started confirming yet". */
-    private val completedMoveKeys = mutableSetOf<String>()
+    /** Stable ids whose move has actually finished — [MediaRepository.applyMove] ran for them —
+     *  as opposed to merely sitting in the [PendingMoveStore] queue. [undo] checks this to tell "can
+     *  still be taken back" apart from "already in the other folder". */
+    private val completedMoveStableIds = mutableSetOf<String>()
+
+    /** True while one batch's system dialog is up, so a second flush doesn't open another. */
+    private var moveFlushInFlight = false
 
     private var currentSettings: CullectSettings = CullectSettings()
 
@@ -242,12 +256,13 @@ class SwipeSessionViewModel(
             undoHistory.clear()
             browseHistory.clear()
             pendingMoveJobs.clear()
-            completedMoveKeys.clear()
+            completedMoveStableIds.clear()
+            moveFlushInFlight = false
             val sortOrder = settingsRepository.settings.first().sortOrder
             // A swipe-deleted photo is still physically on disk (see TrashRepository) until the
             // user empties the trash, so it must be filtered out here or it would just show back
             // up the next time this folder is browsed.
-            val trashedIds = trashRepository.getTrashedStableIds()
+            val trashedIds = trashRepository.getHiddenStableIds()
             val groups = mediaRepository.getMediaGroups(bucketId, period, sortOrder)
                 .filterNot { group -> group.items.any { it.stableId in trashedIds } }
             val startIndex = startAtStableId
@@ -396,14 +411,20 @@ class SwipeSessionViewModel(
         val action = undoHistory.removeLastOrNull() ?: return
         // A move that already landed (file physically in another folder) can't be reversed by
         // this pass — putting the card back would show it as still in this folder when it isn't.
-        // pendingMoveJobs alone can't tell "already done" apart from "not even confirmed yet": on
-        // API 30+ that job completes the instant the confirmation dialog is requested, well before
-        // the user has answered it, so completedMoveKeys (set only once applyMove actually ran) is
-        // checked instead.
-        val alreadyMoved = action.action == SwipeCardAction.MOVE_TO_FOLDER && action.group.key in completedMoveKeys
+        // A move still waiting in the queue is simply taken back; completedMoveStableIds (set only
+        // once applyMove actually ran) is what says it's too late.
+        val alreadyMoved = action.action == SwipeCardAction.MOVE_TO_FOLDER &&
+            action.group.items.any { it.stableId in completedMoveStableIds }
         when (action.action) {
             SwipeCardAction.DELETE -> viewModelScope.launch { trashRepository.cancelPendingTrash(action.group.items) }
-            SwipeCardAction.MOVE_TO_FOLDER -> if (!alreadyMoved) pendingMoveJobs.remove(action.group.key)?.cancel()
+            SwipeCardAction.MOVE_TO_FOLDER -> if (!alreadyMoved) {
+                val job = pendingMoveJobs.remove(action.group.key)
+                job?.cancel()
+                viewModelScope.launch {
+                    job?.join()
+                    pendingMoveStore.remove(action.group.items.mapTo(HashSet()) { it.stableId })
+                }
+            }
             SwipeCardAction.KEEP, SwipeCardAction.NONE, SwipeCardAction.POSTPONE -> Unit
         }
         if (alreadyMoved) {
@@ -438,9 +459,10 @@ class SwipeSessionViewModel(
     }
 
     /**
-     * Requests the "move to folder" write access (API 30+ needs one system dialog per group, like
-     * the trash flow) and applies it once granted. Runs in its own tracked [Job] so [undo] can
-     * cancel it if the user changes their mind before it lands.
+     * Carries out a "move to folder" swipe. Where Android needs no confirmation (below 11, or with
+     * the media-management permission) the file moves right away. Otherwise it's queued in the
+     * [PendingMoveStore] and confirmed together with the others in one dialog — see
+     * [flushPendingMoves]. Runs in its own tracked [Job] so [undo] can cancel it before it lands.
      */
     private fun requestMove(group: MediaGroup) {
         val job = viewModelScope.launch {
@@ -448,26 +470,79 @@ class SwipeSessionViewModel(
             val targetPath = currentSettings.moveToFolderRelativePath
                 ?: currentSettings.moveToFolderBucketId?.let { mediaRepository.getRelativePathForBucket(it) }
                 ?: return@launch
-            val intentSender = mediaRepository.buildMoveRequest(group.allUris)
-            if (intentSender != null) {
-                _moveConfirmationEvents.emit(MoveConfirmationRequest(intentSender, group, targetPath))
-            } else {
-                mediaRepository.applyMove(group.allUris, targetPath)
-                completedMoveKeys += group.key
-                resolveNewFolderBucket(targetPath)
+            val stableIds = group.items.map { it.stableId }
+            if (!mediaRepository.moveNeedsConfirmation()) {
+                val failed = mediaRepository.applyMove(group.allUris, targetPath)
+                if (failed.isEmpty() || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                    completedMoveStableIds += stableIds
+                    resolveNewFolderBucket(targetPath)
+                    return@launch
+                }
+                // Permission was on but the write was refused: fall back to asking.
             }
+            pendingMoveStore.add(group.items.map { PendingMove(it.stableId, it.uri.toString(), targetPath) })
+            if (pendingMoveStore.getAll().size >= MOVE_BATCH_SIZE) flushPendingMoves()
         }
         pendingMoveJobs[group.key] = job
         job.invokeOnCompletion { pendingMoveJobs.remove(group.key, job) }
     }
 
-    /** Called once the system write-access dialog (if any) has been confirmed. */
+    /**
+     * Asks Android once for every queued move headed for the same folder, and carries them out when
+     * the user agrees. Called when the stack ends, the user leaves it, enough have piled up, or the
+     * app starts with a queue a previous run never got to confirm. One destination per call: if the
+     * destination changed mid-session, the next one follows when this one is answered.
+     */
+    fun flushPendingMoves() {
+        viewModelScope.launch {
+            if (moveFlushInFlight) return@launch
+            val pending = pendingMoveStore.getAll()
+            if (pending.isEmpty()) return@launch
+            moveFlushInFlight = true
+            val path = pending.first().targetPath
+            val batch = pending.filter { it.targetPath == path }
+            val uris = batch.map { Uri.parse(it.uri) }
+            val intentSender = if (mediaRepository.moveNeedsConfirmation()) mediaRepository.buildMoveRequest(uris) else null
+            if (intentSender != null) {
+                // moveFlushInFlight stays set until onMoveConfirmed / onMoveCancelled.
+                _moveConfirmationEvents.emit(MoveConfirmationRequest(intentSender, batch.mapTo(HashSet()) { it.stableId }, path))
+            } else {
+                finishMoves(batch, path)
+                moveFlushInFlight = false
+                flushPendingMoves()
+            }
+        }
+    }
+
+    /** Called once the system write-access dialog has been confirmed. Anything undone while the
+     *  dialog was open is no longer queued and is left where it was. */
     fun onMoveConfirmed(request: MoveConfirmationRequest) {
         viewModelScope.launch {
-            mediaRepository.applyMove(request.group.allUris, request.targetRelativePath)
-            completedMoveKeys += request.group.key
-            resolveNewFolderBucket(request.targetRelativePath)
+            val batch = pendingMoveStore.getAll()
+                .filter { it.stableId in request.stableIds && it.targetPath == request.targetRelativePath }
+            finishMoves(batch, request.targetRelativePath)
+            moveFlushInFlight = false
+            flushPendingMoves()
         }
+    }
+
+    /** The dialog was dismissed (or its result was lost): the files stay where they are and show up
+     *  in their folder again, instead of staying hidden in a queue nobody is going to confirm. */
+    fun onMoveCancelled(request: MoveConfirmationRequest?) {
+        viewModelScope.launch {
+            request?.let { pendingMoveStore.remove(it.stableIds) }
+            moveFlushInFlight = false
+            flushPendingMoves()
+        }
+    }
+
+    private suspend fun finishMoves(batch: List<PendingMove>, targetPath: String) {
+        if (batch.isNotEmpty()) {
+            mediaRepository.applyMove(batch.map { Uri.parse(it.uri) }, targetPath)
+            completedMoveStableIds += batch.map { it.stableId }
+            pendingMoveStore.remove(batch.mapTo(HashSet()) { it.stableId })
+        }
+        resolveNewFolderBucket(targetPath)
     }
 
     /** Once the first file has landed in a folder created in Settings, it exists as a normal gallery
