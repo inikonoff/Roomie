@@ -55,16 +55,31 @@ class TrashFolderViewModel(private val trashRepository: TrashRepository) : ViewM
         _justFreedBytes.value = null
     }
 
-    fun restore(entry: TrashEntry) {
-        viewModelScope.launch { trashRepository.restoreFromTrash(listOf(entry)) }
-    }
+    /** (done, total) while a restore is running, null otherwise — drives the progress bar. */
+    private val _restoreProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val restoreProgress: StateFlow<Pair<Int, Int>?> = _restoreProgress
+
+    /** Emits how many files a finished restore brought back, for the "Restored N files" toast. */
+    private val _restoredEvents = MutableSharedFlow<Int>(extraBufferCapacity = 1)
+    val restoredEvents: SharedFlow<Int> = _restoredEvents
+
+    fun restore(entry: TrashEntry) = restoreMany(setOf(entry.stableId))
 
     /** Restores several entries at once through the same [TrashRepository.restoreFromTrash] call
      *  [restore] uses for one — backs both multi-select and "restore all". */
     fun restoreMany(entryIds: Set<String>) {
+        if (_restoreProgress.value != null) return
         val toRestore = entries.value.filter { it.stableId in entryIds }
         if (toRestore.isEmpty()) return
-        viewModelScope.launch { trashRepository.restoreFromTrash(toRestore) }
+        _restoreProgress.value = 0 to toRestore.size
+        viewModelScope.launch {
+            try {
+                trashRepository.restoreFromTrash(toRestore) { done, total -> _restoreProgress.value = done to total }
+                _restoredEvents.tryEmit(toRestore.size)
+            } finally {
+                _restoreProgress.value = null
+            }
+        }
     }
 
     /** Permanently deletes [entries] now instead of waiting out the retention countdown — the

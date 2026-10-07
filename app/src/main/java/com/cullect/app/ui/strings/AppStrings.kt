@@ -128,6 +128,8 @@ interface AppStrings {
     val restoreSelected: String
     val cancelSelection: String
     fun selectedCount(count: Int): String
+    fun restoringProgress(done: Int, total: Int): String
+    fun restoredFiles(count: Int): String
 
     // Summary
     val allCleanedUp: String
@@ -255,6 +257,8 @@ object EnglishStrings : AppStrings {
     override val restoreSelected = "Restore selected"
     override val cancelSelection = "Cancel selection"
     override fun selectedCount(count: Int) = "Selected: $count"
+    override fun restoringProgress(done: Int, total: Int) = "Restoring… $done / $total"
+    override fun restoredFiles(count: Int) = "Restored $count file${if (count == 1) "" else "s"}"
 
     override val allCleanedUp = "All cleaned up!"
     override fun itemsRemoved(count: Int) = "$count item${if (count == 1) "" else "s"} removed"
@@ -382,6 +386,16 @@ object RussianStrings : AppStrings {
     override val restoreSelected = "Восстановить выбранное"
     override val cancelSelection = "Отменить выбор"
     override fun selectedCount(count: Int) = "Выбрано: $count"
+    override fun restoringProgress(done: Int, total: Int) = "Восстановление… $done из $total"
+    override fun restoredFiles(count: Int): String {
+        val word = when {
+            count % 100 in 11..14 -> "файлов"
+            count % 10 == 1 -> "файл"
+            count % 10 in 2..4 -> "файла"
+            else -> "файлов"
+        }
+        return "Восстановлено: $count $word"
+    }
 
     override val allCleanedUp = "Всё убрано!"
     override fun itemsRemoved(count: Int) = "Удалено объектов: $count"

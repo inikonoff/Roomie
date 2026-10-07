@@ -54,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.collectLatest
 import com.cullect.app.data.db.TrashEntry
 import com.cullect.app.ui.components.MediaThumbnail
 import com.cullect.app.ui.components.rememberAllowThumbnailDecode
@@ -79,6 +80,8 @@ fun TrashFolderScreen(
 ) {
     val entries by viewModel.entries.collectAsState()
     val deleteProgress by viewModel.deleteProgress.collectAsState()
+    val restoreProgress by viewModel.restoreProgress.collectAsState()
+    val busy = deleteProgress != null || restoreProgress != null
     val justFreedBytes by viewModel.justFreedBytes.collectAsState()
     val strings = LocalAppStrings.current
     val context = LocalContext.current
@@ -94,9 +97,15 @@ fun TrashFolderScreen(
         if (!present.containsAll(selectedIds)) selectedIds = selectedIds.filterTo(HashSet()) { it in present }
         if (entries.isEmpty()) selectionMode = false
     }
-    BackHandler(enabled = selectionMode && deleteProgress == null) {
+    BackHandler(enabled = selectionMode && !busy) {
         selectionMode = false
         selectedIds = emptySet()
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.restoredEvents.collectLatest { count ->
+            snackbarHostState.showSnackbar(strings.restoredFiles(count))
+        }
     }
 
     // Only fires once a real, physical delete has actually completed (see the ViewModel doc) —
@@ -110,7 +119,7 @@ fun TrashFolderScreen(
     // A permanent delete runs in the ViewModel's own coroutine scope — leaving this screen mid-
     // delete would tear that down and abandon the loop with only some files actually removed, so
     // block every way out (system back, top-bar back) until it finishes.
-    BackHandler(enabled = deleteProgress != null) {}
+    BackHandler(enabled = deleteProgress != null || restoreProgress != null) {}
 
     // Same "wait for the real system result, not just launch() returning" pattern used for
     // trash/move requests elsewhere — launch() only starts the confirmation activity, it doesn't
@@ -175,7 +184,7 @@ fun TrashFolderScreen(
                             Icon(Icons.Filled.Close, contentDescription = strings.cancelSelection)
                         }
                     } else {
-                        IconButton(onClick = onBack, enabled = deleteProgress == null) {
+                        IconButton(onClick = onBack, enabled = !busy) {
                             Icon(Icons.Filled.ArrowBack, contentDescription = strings.back)
                         }
                     }
@@ -184,7 +193,7 @@ fun TrashFolderScreen(
                     if (selectionMode) {
                         IconButton(
                             onClick = { selectedIds = entries.mapTo(HashSet()) { it.stableId } },
-                            enabled = deleteProgress == null,
+                            enabled = !busy,
                         ) {
                             Icon(Icons.Filled.SelectAll, contentDescription = strings.selectAll)
                         }
@@ -194,7 +203,7 @@ fun TrashFolderScreen(
                                 selectionMode = false
                                 selectedIds = emptySet()
                             },
-                            enabled = selectedIds.isNotEmpty() && deleteProgress == null,
+                            enabled = selectedIds.isNotEmpty() && !busy,
                         ) {
                             Icon(Icons.Filled.RestoreFromTrash, contentDescription = strings.restoreSelected)
                         }
@@ -203,13 +212,13 @@ fun TrashFolderScreen(
                         // "empty trash" next to it.
                         IconButton(
                             onClick = { viewModel.restoreMany(entries.mapTo(HashSet()) { it.stableId }) },
-                            enabled = deleteProgress == null,
+                            enabled = !busy,
                         ) {
                             Icon(Icons.Filled.RestoreFromTrash, contentDescription = strings.restoreAll)
                         }
                         IconButton(
                             onClick = { viewModel.requestDeleteForever(entries) },
-                            enabled = deleteProgress == null,
+                            enabled = !busy,
                         ) {
                             Icon(Icons.Filled.DeleteForever, contentDescription = strings.emptyTrash)
                         }
@@ -226,6 +235,15 @@ fun TrashFolderScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(strings.deletingProgress(done, total), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            restoreProgress?.let { (done, total) ->
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                    LinearProgressIndicator(
+                        progress = { if (total > 0) done.toFloat() / total else 0f },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(strings.restoringProgress(done, total), style = MaterialTheme.typography.bodySmall)
                 }
             }
             if (entries.isEmpty()) {
@@ -259,7 +277,7 @@ fun TrashFolderScreen(
                                 }
                             },
                             onStartSelection = {
-                                if (deleteProgress == null) {
+                                if (!busy) {
                                     selectionMode = true
                                     selectedIds = setOf(entry.stableId)
                                 }

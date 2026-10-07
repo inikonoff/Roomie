@@ -60,11 +60,14 @@ class TrashRepository(
     /** Un-trashes [entries]: clears MediaStore's own IS_TRASHED flag (Q+, no consent needed to
      *  un-hide something the user still owns) and drops our retention bookkeeping. Best-effort —
      *  an entry whose underlying file already vanished just stays removed from Room. */
-    suspend fun restoreFromTrash(entries: List<TrashEntry>) = withContext(Dispatchers.IO) {
+    suspend fun restoreFromTrash(
+        entries: List<TrashEntry>,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ) = withContext(Dispatchers.IO) {
         if (entries.isEmpty()) return@withContext
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply { put(MediaStore.MediaColumns.IS_TRASHED, 0) }
-            for (entry in entries) {
+            for ((index, entry) in entries.withIndex()) {
                 try {
                     resolver.update(Uri.parse(entry.uri), values, null, null)
                 } catch (_: RecoverableSecurityException) {
@@ -72,6 +75,7 @@ class TrashRepository(
                     // own countdown won't delete it regardless.
                 } catch (_: SecurityException) {
                 }
+                onProgress(index + 1, entries.size)
             }
         }
         trashDao.deleteByIds(entries.map { it.stableId })
