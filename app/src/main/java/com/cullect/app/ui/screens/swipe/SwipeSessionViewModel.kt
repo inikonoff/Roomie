@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 enum class SwipeDirection { LEFT, RIGHT, UP, DOWN }
@@ -37,6 +38,9 @@ private const val MAX_UNDO_HISTORY = 10
 
 /** How many queued moves are confirmed together without waiting for the stack to end. */
 private const val MOVE_BATCH_SIZE = 25
+
+/** Quiet time after the last swipe before queued moves are sent when no dialog is expected. */
+private const val MOVE_FLUSH_DELAY_MS = 1_500L
 
 /** How far Browse-back (a "do nothing" left-swipe) can rewind, independent of [MAX_UNDO_HISTORY] —
  *  undo/redo of an actual decision (delete/move) staying shallow is deliberate, but plain browsing
@@ -170,6 +174,18 @@ class SwipeSessionViewModel(
 
     /** True while one batch's system dialog is up, so a second flush doesn't open another. */
     private var moveFlushInFlight = false
+
+    /** The delayed flush used while moves resolve silently; each new swipe restarts the wait so a
+     *  burst of swipes goes out as one request. */
+    private var moveFlushJob: Job? = null
+
+    private fun scheduleMoveFlush() {
+        moveFlushJob?.cancel()
+        moveFlushJob = viewModelScope.launch {
+            delay(MOVE_FLUSH_DELAY_MS)
+            flushPendingMoves()
+        }
+    }
 
     private var currentSettings: CullectSettings = CullectSettings()
 
@@ -477,20 +493,23 @@ class SwipeSessionViewModel(
                 ?: return@launch
             val stableIds = group.items.map { it.stableId }
             if (!mediaRepository.moveNeedsConfirmation()) {
+                // Below Android 11 there is nothing to ask: write straight away.
                 val failed = mediaRepository.applyMove(group.allUris, targetPath)
                 if (failed.isEmpty()) {
                     completedMoveStableIds += stableIds
                     resolveNewFolderBucket(targetPath)
-                    return@launch
-                }
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                } else {
                     _moveFailedEvents.tryEmit(failed.size)
-                    return@launch
                 }
-                // Permission was on but the write was refused: queue it and ask the system instead.
+                return@launch
             }
             pendingMoveStore.add(group.items.map { PendingMove(it.stableId, it.uri.toString(), targetPath) })
-            if (pendingMoveStore.getAll().size >= MOVE_BATCH_SIZE) flushPendingMoves()
+            when {
+                // With the media-management permission the system request resolves without a dialog,
+                // so there's no reason to hold moves back: send them shortly after the last swipe.
+                mediaRepository.canManageMedia() -> scheduleMoveFlush()
+                pendingMoveStore.getAll().size >= MOVE_BATCH_SIZE -> flushPendingMoves()
+            }
         }
         pendingMoveJobs[group.key] = job
         job.invokeOnCompletion { pendingMoveJobs.remove(group.key, job) }
@@ -509,19 +528,7 @@ class SwipeSessionViewModel(
             if (pending.isEmpty()) return@launch
             moveFlushInFlight = true
             val path = pending.first().targetPath
-            var batch = pending.filter { it.targetPath == path }
-            // With the media-management permission try the direct write first; whatever it refuses
-            // goes through the system's own request below (which grants silently or asks).
-            if (mediaRepository.canManageMedia()) {
-                val failed = mediaRepository.applyMove(batch.map { Uri.parse(it.uri) }, path).mapTo(HashSet()) { it.toString() }
-                val moved = batch.filter { it.uri !in failed }
-                if (moved.isNotEmpty()) {
-                    completedMoveStableIds += moved.map { it.stableId }
-                    pendingMoveStore.remove(moved.mapTo(HashSet()) { it.stableId })
-                    resolveNewFolderBucket(path)
-                }
-                batch = batch.filter { it.uri in failed }
-            }
+            val batch = pending.filter { it.targetPath == path }
             if (batch.isEmpty()) {
                 moveFlushInFlight = false
                 flushPendingMoves()

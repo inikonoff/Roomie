@@ -121,10 +121,11 @@ class MediaRepository(private val context: Context) {
     fun canManageMedia(): Boolean =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && MediaStore.canManageMedia(context)
 
-    /** Whether moving needs the system's write-confirmation dialog: Android 11+ without the
-     *  media-management permission. Below 11 there is nothing to confirm. */
-    fun moveNeedsConfirmation(): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !canManageMedia()
+    /** Whether a move must go through the system's write request: Android 11+ always. Writing straight
+     *  to a file another app owns is refused there even when the media-management permission is on
+     *  (seen on a real device) — the permission only makes the system request resolve silently,
+     *  without a dialog, instead of lifting the need for the request. Below 11 there's nothing to ask. */
+    fun moveNeedsConfirmation(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
 
     /** Bumped every time files have been moved. Screens that cache a folder's contents compare it to
      *  the value they loaded at: moving files changes the *destination* folder too, which they would
