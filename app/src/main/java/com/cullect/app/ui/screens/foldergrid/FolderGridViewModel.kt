@@ -45,13 +45,19 @@ class FolderGridViewModel(
     private var loadedKey: String? = null
     private var loadedTrashedIds: Set<String> = emptySet()
 
+    /** [MediaRepository.contentVersion] at the last load: files moved into (or out of) this folder
+     *  since then mean the list is stale even though the trash set didn't change. */
+    private var loadedContentVersion = -1L
+
     fun load(bucketId: Long?, displayName: String) {
         val key = "$bucketId|$displayName"
         viewModelScope.launch {
             val currentTrashedIds = trashRepository.getHiddenStableIds()
-            if (key == loadedKey && currentTrashedIds == loadedTrashedIds) return@launch
+            val contentVersion = mediaRepository.contentVersion.value
+            if (key == loadedKey && currentTrashedIds == loadedTrashedIds && contentVersion == loadedContentVersion) return@launch
             loadedKey = key
             loadedTrashedIds = currentTrashedIds
+            loadedContentVersion = contentVersion
             val savedPeriod = settingsRepository.getFolderPeriodFilter(bucketId)
             // Coming back to a grid that already has content (e.g. from the swipe screen after some
             // deletions): swap the list in place instead of tearing the grid down to a spinner,

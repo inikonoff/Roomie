@@ -130,6 +130,12 @@ fun SwipeScreen(
     }
 
     LaunchedEffect(viewModel) {
+        viewModel.moveFailedEvents.collect { count ->
+            snackbarHostState.showSnackbar(strings.moveFailed(count))
+        }
+    }
+
+    LaunchedEffect(viewModel) {
         viewModel.moveTargetMissingEvents.collect {
             snackbarHostState.showSnackbar(strings.selectMoveFolderPrompt)
         }

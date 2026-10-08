@@ -126,6 +126,7 @@ interface AppStrings {
     val folderIsClean: String
     val undo: String
     val selectMoveFolderPrompt: String
+    fun moveFailed(count: Int): String
 
     // Trash folder
     fun trashTitle(count: Int): String
@@ -265,6 +266,7 @@ object EnglishStrings : AppStrings {
     override val folderIsClean = "Nothing left here — this folder is clean."
     override val undo = "Undo"
     override val selectMoveFolderPrompt = "Choose a destination folder in Settings first"
+    override fun moveFailed(count: Int) = "Couldn't move $count file${if (count == 1) "" else "s"} — they stay where they were"
 
     override fun trashTitle(count: Int) = "Trash ($count)"
     override fun expiredTrashCount(count: Int) = "$count expired — tap Empty trash to free up space"
@@ -403,6 +405,15 @@ object RussianStrings : AppStrings {
     override val folderIsClean = "Здесь больше ничего нет — папка чистая."
     override val undo = "Отменить"
     override val selectMoveFolderPrompt = "Сначала выберите папку назначения в Настройках"
+    override fun moveFailed(count: Int): String {
+        val word = when {
+            count % 100 in 11..14 -> "файлов"
+            count % 10 == 1 -> "файл"
+            count % 10 in 2..4 -> "файла"
+            else -> "файлов"
+        }
+        return "Не удалось перенести $count $word — они остались на месте"
+    }
 
     override fun trashTitle(count: Int) = "Корзина ($count)"
     override fun expiredTrashCount(count: Int) = "Просрочено: $count — нажмите «Очистить корзину», чтобы освободить место"

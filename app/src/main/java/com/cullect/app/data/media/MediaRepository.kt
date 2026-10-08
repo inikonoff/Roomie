@@ -1,5 +1,7 @@
 package com.cullect.app.data.media
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
@@ -124,18 +126,38 @@ class MediaRepository(private val context: Context) {
     fun moveNeedsConfirmation(): Boolean =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !canManageMedia()
 
-    /** Moves [uris] into [targetRelativePath] by updating their MediaStore row; best-effort.
-     *  Returns the ones that did not move (denied, or gone in the meantime). */
+    /** Bumped every time files have been moved. Screens that cache a folder's contents compare it to
+     *  the value they loaded at: moving files changes the *destination* folder too, which they would
+     *  otherwise keep showing without them. */
+    private val _contentVersion = MutableStateFlow(0L)
+    val contentVersion: StateFlow<Long> = _contentVersion
+
+    /** Moves [uris] into [targetRelativePath] by updating their MediaStore row. Returns the ones that
+     *  did NOT end up there — checked by reading the row back, because `update()` returning a count
+     *  doesn't prove the file actually moved (a refused or ignored write must not look like success). */
     suspend fun applyMove(uris: List<Uri>, targetRelativePath: String): List<Uri> = withContext(Dispatchers.IO) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return@withContext uris
         val values = ContentValues().apply { put(MediaStore.MediaColumns.RELATIVE_PATH, targetRelativePath) }
-        uris.filterNot { uri ->
+        uris.forEach { uri ->
             try {
-                resolver.update(uri, values, null, null) > 0
+                resolver.update(uri, values, null, null)
             } catch (_: Exception) {
-                false
+                // Refused (needs consent) or gone in the meantime: caught below by the read-back.
             }
         }
+        _contentVersion.value += 1
+        uris.filterNot { uri -> isInRelativePath(uri, targetRelativePath) }
     }
+
+    private fun isInRelativePath(uri: Uri, relativePath: String): Boolean =
+        try {
+            resolver.query(uri, arrayOf(MediaStore.MediaColumns.RELATIVE_PATH), null, null, null)?.use { cursor ->
+                cursor.moveToFirst() &&
+                    cursor.getString(0).orEmpty().trimEnd('/').equals(relativePath.trimEnd('/'), ignoreCase = true)
+            } ?: false
+        } catch (_: Exception) {
+            false
+        }
 
     private fun queryImages(bucketId: Long?, period: PeriodFilter): List<MediaItem> {
         val projection = buildList {

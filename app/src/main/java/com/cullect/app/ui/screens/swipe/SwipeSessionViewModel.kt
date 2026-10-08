@@ -146,6 +146,11 @@ class SwipeSessionViewModel(
     private val _moveTargetMissingEvents = MutableSharedFlow<Unit>()
     val moveTargetMissingEvents: SharedFlow<Unit> = _moveTargetMissingEvents
 
+    /** Fired with how many files a move could not carry out (the system refused, or they vanished),
+     *  so a failed move is never silent. Those files stay where they were. */
+    private val _moveFailedEvents = MutableSharedFlow<Int>(extraBufferCapacity = 1)
+    val moveFailedEvents: SharedFlow<Int> = _moveFailedEvents
+
     private val undoHistory = ArrayDeque<SwipeAction>(MAX_UNDO_HISTORY)
 
     /** Cards passed with a "do nothing" (browsing) swipe, so a left-swipe-to-go-back has something
@@ -473,12 +478,16 @@ class SwipeSessionViewModel(
             val stableIds = group.items.map { it.stableId }
             if (!mediaRepository.moveNeedsConfirmation()) {
                 val failed = mediaRepository.applyMove(group.allUris, targetPath)
-                if (failed.isEmpty() || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                if (failed.isEmpty()) {
                     completedMoveStableIds += stableIds
                     resolveNewFolderBucket(targetPath)
                     return@launch
                 }
-                // Permission was on but the write was refused: fall back to asking.
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                    _moveFailedEvents.tryEmit(failed.size)
+                    return@launch
+                }
+                // Permission was on but the write was refused: queue it and ask the system instead.
             }
             pendingMoveStore.add(group.items.map { PendingMove(it.stableId, it.uri.toString(), targetPath) })
             if (pendingMoveStore.getAll().size >= MOVE_BATCH_SIZE) flushPendingMoves()
@@ -500,9 +509,25 @@ class SwipeSessionViewModel(
             if (pending.isEmpty()) return@launch
             moveFlushInFlight = true
             val path = pending.first().targetPath
-            val batch = pending.filter { it.targetPath == path }
-            val uris = batch.map { Uri.parse(it.uri) }
-            val intentSender = if (mediaRepository.moveNeedsConfirmation()) mediaRepository.buildMoveRequest(uris) else null
+            var batch = pending.filter { it.targetPath == path }
+            // With the media-management permission try the direct write first; whatever it refuses
+            // goes through the system's own request below (which grants silently or asks).
+            if (mediaRepository.canManageMedia()) {
+                val failed = mediaRepository.applyMove(batch.map { Uri.parse(it.uri) }, path).mapTo(HashSet()) { it.toString() }
+                val moved = batch.filter { it.uri !in failed }
+                if (moved.isNotEmpty()) {
+                    completedMoveStableIds += moved.map { it.stableId }
+                    pendingMoveStore.remove(moved.mapTo(HashSet()) { it.stableId })
+                    resolveNewFolderBucket(path)
+                }
+                batch = batch.filter { it.uri in failed }
+            }
+            if (batch.isEmpty()) {
+                moveFlushInFlight = false
+                flushPendingMoves()
+                return@launch
+            }
+            val intentSender = mediaRepository.buildMoveRequest(batch.map { Uri.parse(it.uri) })
             if (intentSender != null) {
                 // moveFlushInFlight stays set until onMoveConfirmed / onMoveCancelled.
                 _moveConfirmationEvents.emit(MoveConfirmationRequest(intentSender, batch.mapTo(HashSet()) { it.stableId }, path))
@@ -536,13 +561,16 @@ class SwipeSessionViewModel(
         }
     }
 
+    /** Carries out [batch] and settles the queue: files that really moved are recorded as done, and
+     *  every file leaves the queue either way — one that didn't move goes back to showing in its old
+     *  folder and the user is told, instead of staying hidden or failing silently. */
     private suspend fun finishMoves(batch: List<PendingMove>, targetPath: String) {
-        if (batch.isNotEmpty()) {
-            mediaRepository.applyMove(batch.map { Uri.parse(it.uri) }, targetPath)
-            completedMoveStableIds += batch.map { it.stableId }
-            pendingMoveStore.remove(batch.mapTo(HashSet()) { it.stableId })
-        }
-        resolveNewFolderBucket(targetPath)
+        if (batch.isEmpty()) return
+        val failed = mediaRepository.applyMove(batch.map { Uri.parse(it.uri) }, targetPath).mapTo(HashSet()) { it.toString() }
+        completedMoveStableIds += batch.filter { it.uri !in failed }.map { it.stableId }
+        pendingMoveStore.remove(batch.mapTo(HashSet()) { it.stableId })
+        if (failed.isNotEmpty()) _moveFailedEvents.tryEmit(failed.size)
+        if (failed.size < batch.size) resolveNewFolderBucket(targetPath)
     }
 
     /** Once the first file has landed in a folder created in Settings, it exists as a normal gallery
