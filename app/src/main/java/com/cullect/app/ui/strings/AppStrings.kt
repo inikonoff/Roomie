@@ -102,10 +102,6 @@ interface AppStrings {
     val moveToFolderDestination: String
     val notSet: String
     val chooseAFolder: String
-    val manageMediaTitle: String
-    val manageMediaHint: String
-    val manageMediaOn: String
-    val manageMediaOff: String
     val newFolder: String
     val newFolderName: String
     val newFolderInParent: String
@@ -243,10 +239,6 @@ object EnglishStrings : AppStrings {
     override val moveToFolderDestination = "Move destination"
     override val notSet = "Not set"
     override val chooseAFolder = "Choose a folder"
-    override val manageMediaTitle = "Move without confirmation"
-    override val manageMediaHint = "Allow Cullect to manage media files in system settings, and moving a photo will no longer ask for confirmation. Without it, moves are confirmed together in one dialog."
-    override val manageMediaOn = "On"
-    override val manageMediaOff = "Off"
     override val newFolder = "New folder"
     override val newFolderName = "Folder name"
     override val newFolderInParent = "Created inside DCIM (photos and videos both go there)"
@@ -382,10 +374,6 @@ object RussianStrings : AppStrings {
     override val moveToFolderDestination = "Папка для переноса"
     override val notSet = "Не задано"
     override val chooseAFolder = "Выберите папку"
-    override val manageMediaTitle = "Перемещать без подтверждения"
-    override val manageMediaHint = "Разрешите Cullect управлять медиафайлами в настройках системы, и перемещение фото больше не будет запрашивать подтверждение. Без этого перемещения подтверждаются сразу пачкой, одним окном."
-    override val manageMediaOn = "Включено"
-    override val manageMediaOff = "Выключено"
     override val newFolder = "Новая папка"
     override val newFolderName = "Название папки"
     override val newFolderInParent = "Создаётся внутри DCIM (туда же уйдут и фото, и видео)"

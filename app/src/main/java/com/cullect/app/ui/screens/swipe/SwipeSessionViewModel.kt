@@ -29,18 +29,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 enum class SwipeDirection { LEFT, RIGHT, UP, DOWN }
 
 private const val MAX_UNDO_HISTORY = 10
-
-/** How many queued moves are confirmed together without waiting for the stack to end. */
-private const val MOVE_BATCH_SIZE = 25
-
-/** Quiet time after the last swipe before queued moves are sent when no dialog is expected. */
-private const val MOVE_FLUSH_DELAY_MS = 1_500L
 
 /** How far Browse-back (a "do nothing" left-swipe) can rewind, independent of [MAX_UNDO_HISTORY] —
  *  undo/redo of an actual decision (delete/move) staying shallow is deliberate, but plain browsing
@@ -174,18 +167,6 @@ class SwipeSessionViewModel(
 
     /** True while one batch's system dialog is up, so a second flush doesn't open another. */
     private var moveFlushInFlight = false
-
-    /** The delayed flush used while moves resolve silently; each new swipe restarts the wait so a
-     *  burst of swipes goes out as one request. */
-    private var moveFlushJob: Job? = null
-
-    private fun scheduleMoveFlush() {
-        moveFlushJob?.cancel()
-        moveFlushJob = viewModelScope.launch {
-            delay(MOVE_FLUSH_DELAY_MS)
-            flushPendingMoves()
-        }
-    }
 
     private var currentSettings: CullectSettings = CullectSettings()
 
@@ -480,10 +461,11 @@ class SwipeSessionViewModel(
     }
 
     /**
-     * Carries out a "move to folder" swipe. Where Android needs no confirmation (below 11, or with
-     * the media-management permission) the file moves right away. Otherwise it's queued in the
-     * [PendingMoveStore] and confirmed together with the others in one dialog — see
-     * [flushPendingMoves]. Runs in its own tracked [Job] so [undo] can cancel it before it lands.
+     * Carries out a "move to folder" swipe. Below Android 11 nothing needs confirming and the file
+     * moves right away. From 11 on it is queued in the [PendingMoveStore] and every queued move is
+     * confirmed together, in one dialog, only when the session ends or is left — see
+     * [flushPendingMoves] — so sorting itself is never interrupted. Runs in its own tracked [Job]
+     * so [undo] can cancel it before it lands.
      */
     private fun requestMove(group: MediaGroup) {
         val job = viewModelScope.launch {
@@ -504,12 +486,6 @@ class SwipeSessionViewModel(
                 return@launch
             }
             pendingMoveStore.add(group.items.map { PendingMove(it.stableId, it.uri.toString(), targetPath) })
-            when {
-                // With the media-management permission the system request resolves without a dialog,
-                // so there's no reason to hold moves back: send them shortly after the last swipe.
-                mediaRepository.canManageMedia() -> scheduleMoveFlush()
-                pendingMoveStore.getAll().size >= MOVE_BATCH_SIZE -> flushPendingMoves()
-            }
         }
         pendingMoveJobs[group.key] = job
         job.invokeOnCompletion { pendingMoveJobs.remove(group.key, job) }
@@ -517,7 +493,7 @@ class SwipeSessionViewModel(
 
     /**
      * Asks Android once for every queued move headed for the same folder, and carries them out when
-     * the user agrees. Called when the stack ends, the user leaves it, enough have piled up, or the
+     * the user agrees. Called when the stack ends, the user leaves it, or the
      * app starts with a queue a previous run never got to confirm. One destination per call: if the
      * destination changed mid-session, the next one follows when this one is answered.
      */

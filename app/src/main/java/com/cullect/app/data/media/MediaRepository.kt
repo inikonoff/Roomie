@@ -116,15 +116,10 @@ class MediaRepository(private val context: Context) {
         }
     }
 
-    /** True when the user has allowed "media management" (Android 12+) in system settings: Cullect
-     *  may then move media without a confirmation dialog. */
-    fun canManageMedia(): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && MediaStore.canManageMedia(context)
-
     /** Whether a move must go through the system's write request: Android 11+ always. Writing straight
-     *  to a file another app owns is refused there even when the media-management permission is on
-     *  (seen on a real device) — the permission only makes the system request resolve silently,
-     *  without a dialog, instead of lifting the need for the request. Below 11 there's nothing to ask. */
+     *  to a file another app owns is refused there (seen on a real device, even with the
+     *  media-management permission on), so the request — one dialog per batch — is the only way.
+     *  Below 11 there's nothing to ask. */
     fun moveNeedsConfirmation(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
 
     /** Bumped every time files have been moved. Screens that cache a folder's contents compare it to

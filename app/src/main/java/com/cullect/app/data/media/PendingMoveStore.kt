@@ -12,10 +12,10 @@ private val Context.pendingMoveDataStore by preferencesDataStore(name = "cullect
 data class PendingMove(val stableId: String, val uri: String, val targetPath: String)
 
 /**
- * Moves the user has swiped but Android hasn't been asked to carry out yet. Without the
- * "manage media" permission every write to someone else's file needs a system confirmation, and one
- * dialog per swipe is unbearable — so swiped moves are queued here and confirmed together in one
- * dialog (when the stack ends, the user leaves it, or enough have piled up).
+ * Moves the user has swiped but Android hasn't been asked to carry out yet. On Android 11+ every
+ * write to someone else's file needs a system confirmation, and one dialog per swipe is unbearable —
+ * so swiped moves are queued here and confirmed together in one dialog, when the stack ends or the
+ * user leaves it, so the user sorts in peace and is asked once at the end.
  *
  * Kept on disk so a queue survives the app being killed before it was confirmed. Queued files are
  * hidden from browsing (see [com.cullect.app.data.trash.TrashRepository.getHiddenStableIds]) until
